@@ -1,7 +1,7 @@
 # EulerAP — README
 
 This repository contains a compact 2D relaxation-Euler example implemented in
-`relaxation_euler_1d.jl` using ClimaTimeSteppers for IMEX integration. The
+`relaxation_euler_2d.jl` using ClimaTimeSteppers for IMEX integration. The
 script is intentionally minimal and uses a finite-volume spatial discretization
 on the periodic domain $[0,1]\times[0,1]$.
 
@@ -23,12 +23,13 @@ Here $\varepsilon$ is the relaxation parameter (named `eps` in the code). As
 $\varepsilon\to 0$ the pressure term $\rho/\varepsilon$ becomes stiff and the
 right-hand-side relaxation terms become dominant — motivating IMEX splitting.
 
-The mixed terms
+The mixed terms  
 $$
 \partial_y\left(\frac{m_x m_y}{\rho}\right)
 \quad\text{and}\quad
 \partial_x\left(\frac{m_x m_y}{\rho}\right)
-$$
+$$  
+
 appear only in 2D because momentum is transported in both coordinate
 directions. In 1D, all $\partial_y(\cdot)$ terms vanish, so these cross-fluxes
 do not appear.
@@ -61,12 +62,12 @@ in the `prob` object returned.
   $|u|+c$, with $c=\sqrt{1/\varepsilon}$ in the model) and $F$ are the
   physical flux components for each conserved field.
 
-- `explicit_tendency!(du, u, p, t)` — builds the explicit spatial flux
+- `explicit_part!(du, u, p, t)` — builds the explicit spatial flux
   divergence contribution (finite-volume flux differences) for all cells and
   stores it in `du`. It implements periodic boundary conditions by wrapping
   indices when computing neighbor fluxes in x and y directions.
 
-- `implicit_tendency!(du, u, p, t)` — evaluates the stiff relaxation source
+- `implicit_part!(du, u, p, t)` — evaluates the stiff relaxation source
   terms. For this model the only implicit terms are the momentum relaxation
   terms, implemented as
 
@@ -141,8 +142,4 @@ julia --project=. relaxation_euler_2d.jl
 - E. F. Toro, *Riemann Solvers and Numerical Methods for Fluid Dynamics*,
   3rd edition, Springer, 2009.
 
-If you want, I can: commit the README, add command-line arguments to the
-script, or expand the README with a small usage/benchmark section. Which
-would you like next?
 # EulerAP.jl
-Solving Euler type system using Asymptotic Preserving (AP) schemes in Julia.
