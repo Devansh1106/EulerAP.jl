@@ -67,8 +67,8 @@ end
     return f1, f2, f3
 end
 
-# Explicit tendency for the 2D relaxation Euler system (non-stiff fluxes)
-function explicit_tendency!(du, u, p::RelaxationParams, t)
+# Explicit part for the 2D relaxation Euler system (non-stiff fluxes)
+function explicit_part!(du, u, p::RelaxationParams, t)
     ncells = p.nx * p.ny
     rho = @view u[1:ncells]
     mx = @view u[ncells + 1:2 * ncells]
@@ -117,8 +117,8 @@ function explicit_tendency!(du, u, p::RelaxationParams, t)
     return nothing
 end
 
-# Implicit tendency for the 2D relaxation Euler system (stiff source terms)
-function implicit_tendency!(du, u, p::RelaxationParams, t)
+# Implicit part for the 2D relaxation Euler system (stiff source terms)
+function implicit_part!(du, u, p::RelaxationParams, t)
     ncells = p.nx * p.ny
     rho = @view u[1:ncells]
     mx = @view u[ncells + 1:2 * ncells]
@@ -180,8 +180,8 @@ function build_problem(; nx=64, ny=64, eps=0.1, tspan=(0.0, 0.2))
     end
 
     jac_prototype = Diagonal(ones(3 * ncells))
-    imp = CTS.ODEFunction(implicit_tendency!; jac_prototype=jac_prototype, Wfact=wfact!)
-    f = CTS.ClimaODEFunction(; T_exp! = explicit_tendency!, T_imp! = imp)
+    imp = CTS.ODEFunction(implicit_part!; jac_prototype=jac_prototype, Wfact=wfact!)
+    f = CTS.ClimaODEFunction(; T_exp! = explicit_part!, T_imp! = imp)
     prob = CTS.ODEProblem(f, u0, tspan, p)
 
     return prob, x, y, p
