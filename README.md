@@ -23,7 +23,8 @@ Here $\varepsilon$ is the relaxation parameter (named `eps` in the code). As
 $\varepsilon\to 0$ the pressure term $\rho/\varepsilon$ becomes stiff and the
 right-hand-side relaxation terms become dominant — motivating IMEX splitting.
 
-The mixed terms  
+The mixed terms
+
 $$
 \partial_y\left(\frac{m_x m_y}{\rho}\right)
 \quad\text{and}\quad
