@@ -1,9 +1,10 @@
-using ClimaTimeSteppers
+using ADTypes
 using LinearAlgebra
+using NonlinearSolve
 using Plots
 using SparseArrays
-
-const CTS = ClimaTimeSteppers
+# using SparseDiffTools
+using SparseMatrixColorings
 
 # 2D relaxation Euler-like system on [0,1]x[0,1] with periodic BC:
 #   rho_t + (mx)_x + (my)_y = 0
@@ -67,8 +68,8 @@ end
     return f1, f2, f3
 end
 
-# Explicit part for the 2D relaxation Euler system (non-stiff fluxes)
-function explicit_part!(du, u, p::RelaxationParams, t)
+# Implicit part for the 2D relaxation Euler system (all fluxes + stiff source terms)
+function implicit_part!(du, u, p::RelaxationParams, t)
     ncells = p.nx * p.ny
     rho = @view u[1:ncells]
     mx = @view u[ncells + 1:2 * ncells]
@@ -84,6 +85,7 @@ function explicit_part!(du, u, p::RelaxationParams, t)
 
     for j in 1:p.ny
         for i in 1:p.nx
+            # periodic bc indexing 
             i_right = i == p.nx ? 1 : i + 1
             l = cell_index(i, j, p)
             r = cell_index(i_right, j, p)
@@ -102,57 +104,105 @@ function explicit_part!(du, u, p::RelaxationParams, t)
         j_top = j == p.ny ? 1 : j + 1
         for i in 1:p.nx
             b = cell_index(i, j, p)
-            t_idx = cell_index(i, j_top, p)
+            t = cell_index(i, j_top, p)
 
-            f1, f2, f3 = rusanov_flux_y(rho[b], mx[b], my[b], rho[t_idx], mx[t_idx], my[t_idx], p.eps)
+            f1, f2, f3 = rusanov_flux_y(rho[b], mx[b], my[b], rho[t], mx[t], my[t], p.eps)
             drho[b] -= f1 / p.dy
             dmx[b] -= f2 / p.dy
             dmy[b] -= f3 / p.dy
-            drho[t_idx] += f1 / p.dy
-            dmx[t_idx] += f2 / p.dy
-            dmy[t_idx] += f3 / p.dy
+            drho[t] += f1 / p.dy
+            dmx[t] += f2 / p.dy
+            dmy[t] += f3 / p.dy
         end
     end
 
     return nothing
 end
 
-# Implicit part for the 2D relaxation Euler system (stiff source terms)
-function implicit_part!(du, u, p::RelaxationParams, t)
+function build_jacobian_prototype(p::RelaxationParams)
     ncells = p.nx * p.ny
-    rho = @view u[1:ncells]
-    mx = @view u[ncells + 1:2 * ncells]
-    my = @view u[2 * ncells + 1:3 * ncells]
+    jac_prototype = spzeros(Float64, 3 * ncells, 3 * ncells)
 
-    drho = @view du[1:ncells]
-    dmx = @view du[ncells + 1:2 * ncells]
-    dmy = @view du[2 * ncells + 1:3 * ncells]
+    for j in 1:p.ny
+        for i in 1:p.nx
+            # periodic bc indexing for neighbors
+            cell = cell_index(i, j, p)
+            left = cell_index(i == 1 ? p.nx : i - 1, j, p)
+            right = cell_index(i == p.nx ? 1 : i + 1, j, p)
+            bottom = cell_index(i, j == 1 ? p.ny : j - 1, p)
+            top = cell_index(i, j == p.ny ? 1 : j + 1, p)
 
-    fill!(drho, 0.0)
-    @. dmx = -mx / p.eps
-    @. dmy = -my / p.eps
+            for row_var in 0:2 # loop over rho, mx, my (3 variables) in rows
+                row = row_var * ncells + cell # since u = [ρ, mx, my] stacked
+                for neighbor in (cell, left, right, bottom, top)
+                    for col_var in 0:2  # loop over rho, mx, my (3 variables) in cols
+                        jac_prototype[row, col_var * ncells + neighbor] = 1.0
+                    end
+                end
+            end
+        end
+    end
 
+    return jac_prototype
+end
+
+mutable struct ImplicitStepData
+    model::RelaxationParams
+    dt::Float64
+    t::Float64
+    u_prev::Vector{Float64}
+    rhs_cache::AbstractVector
+end
+
+# for stats collection during the solve
+mutable struct RunStats
+    total_time::Float64
+    total_bytes::Int
+    total_gctime::Float64
+    step_times::Vector{Float64}
+    step_bytes::Vector{Int}
+    step_gctimes::Vector{Float64}
+end
+
+function RunStats(nsteps::Int)
+    return RunStats(0.0, 0, 0.0, zeros(Float64, nsteps), zeros(Int, nsteps), zeros(Float64, nsteps))
+end
+
+function backward_euler_residual!(res, u, p::ImplicitStepData)
+    if !(eltype(p.rhs_cache) === eltype(u) && length(p.rhs_cache) == length(u))
+        p.rhs_cache = similar(u)
+    end
+    implicit_part!(p.rhs_cache, u, p.model, p.t)
+    @. res = u - p.u_prev - p.dt * p.rhs_cache
     return nothing
 end
 
-function wfact!(w, u, p::RelaxationParams, dtgamma, t)
-    ncells = p.nx * p.ny
-    if typeof(w) <: SparseMatrixCSC
-        fill!(w.nzval, 0.0)
-    elseif hasproperty(w, :diag)
-        fill!(w.diag, 0.0)
+function print_run_stats(label, stats::RunStats, nsteps_done::Int)
+    if nsteps_done == 0
+        println(label, " stats: no steps completed")
+        return
     end
 
-    for i in 1:ncells
-        w[i, i] = -1.0
-    end
+    step_times = view(stats.step_times, 1:nsteps_done)
+    step_bytes = view(stats.step_bytes, 1:nsteps_done)
+    step_gctimes = view(stats.step_gctimes, 1:nsteps_done)
 
-    stiff_diag = -(1.0 + dtgamma / p.eps)
-    for i in (ncells + 1):(3 * ncells)
-        w[i, i] = stiff_diag
-    end
+    avg_step_time = sum(step_times) / nsteps_done
+    avg_step_bytes = sum(step_bytes) / nsteps_done
+    avg_step_gc = sum(step_gctimes) / nsteps_done
 
-    return nothing
+    println(label, " stats:")
+    println("  total wall time = ", round(stats.total_time; digits = 6), " s")
+    println("  total allocations = ", round(stats.total_bytes / 2^20; digits = 3), " MiB")
+    println("  total GC time = ", round(stats.total_gctime; digits = 6), " s")
+    println("  steps completed = ", nsteps_done)
+    println("  first step time = ", round(step_times[1]; digits = 6), " s")
+    println("  first step allocations = ", round(step_bytes[1] / 2^20; digits = 3), " MiB")
+    println("  avg step time = ", round(avg_step_time; digits = 6), " s")
+    println("  max step time = ", round(maximum(step_times); digits = 6), " s")
+    println("  avg step allocations = ", round(avg_step_bytes / 2^20; digits = 3), " MiB")
+    println("  max step allocations = ", round(maximum(step_bytes) / 2^20; digits = 3), " MiB")
+    println("  avg step GC time = ", round(avg_step_gc; digits = 6), " s")
 end
 
 function initial_condition(x, y)
@@ -162,7 +212,7 @@ function initial_condition(x, y)
     return rho0, rho0 * ux0, rho0 * uy0
 end
 
-function build_problem(; nx=64, ny=64, eps=0.1, tspan=(0.0, 0.2))
+function build_problem(; nx=64, ny=64, eps=0.05, tspan=(0.0, 0.5))
     x = range(0.0, 1.0; length=nx + 1)[1:end-1]
     y = range(0.0, 1.0; length=ny + 1)[1:end-1]
     p = RelaxationParams(eps, nx, ny, 1.0 / nx, 1.0 / ny)
@@ -179,22 +229,47 @@ function build_problem(; nx=64, ny=64, eps=0.1, tspan=(0.0, 0.2))
         end
     end
 
-    jac_prototype = Diagonal(ones(3 * ncells))
-    imp = CTS.ODEFunction(implicit_part!; jac_prototype=jac_prototype, Wfact=wfact!)
-    f = CTS.ClimaODEFunction(; T_exp! = explicit_part!, T_imp! = imp)
-    prob = CTS.ODEProblem(f, u0, tspan, p)
-
-    return prob, x, y, p
+    return u0, x, y, p, build_jacobian_prototype(p)
 end
 
-prob, x, y, p = build_problem()
-alg = CTS.IMEXAlgorithm(
-    CTS.ARS343(),
-    CTS.NewtonsMethod(; max_iters=4, update_j=CTS.UpdateEvery(CTS.NewTimeStep)),
-)
-sol = CTS.solve(prob, alg; dt=1.5e-3, saveat=[prob.tspan[2]])
+function solve_backward_euler(u0, p::RelaxationParams, tspan, jac_prototype; dt=5.0e-3)
 
-u_final = sol.u[end]
+    nls_function = NonlinearFunction(backward_euler_residual!; jac_prototype = jac_prototype)
+    nls_algorithm = NewtonRaphson(; autodiff = AutoForwardDiff(; chunksize = 12), concrete_jac = true)
+
+    u = copy(u0)
+    step_data = ImplicitStepData(p, dt, tspan[1], copy(u0), similar(u0))
+    nsteps_target = ceil(Int, (tspan[2] - tspan[1]) / dt)
+    stats = RunStats(nsteps_target)
+
+    t = tspan[1]
+    nsteps_done = 0
+    total_timed = @timed while t < tspan[2] - 10 * eps(tspan[2] + 1.0)
+        dt_step = min(dt, tspan[2] - t)
+        step_data.dt = dt_step
+        step_data.t = t + dt_step
+        step_data.u_prev .= u
+
+        nsteps_done += 1
+        step_timed = @timed begin
+            nonlinear_problem = NonlinearProblem(nls_function, copy(u), step_data)
+            nonlinear_solution = solve(nonlinear_problem, nls_algorithm; abstol = 1e-10, reltol = 1e-10)
+            u .= nonlinear_solution.u
+        end
+        stats.step_times[nsteps_done] = step_timed.time
+        stats.step_bytes[nsteps_done] = step_timed.bytes
+        stats.step_gctimes[nsteps_done] = step_timed.gctime
+        t += dt_step
+        end
+        println("Saved rho_final_2d.png, ux_final_2d.png, and uy_final_2d.png in the working directory.")
+    stats.total_gctime = total_timed.gctime
+
+    return u, stats, nsteps_done
+end
+
+u0, x, y, p, jac_prototype = build_problem()
+u_final, solve_stats, nsteps_done = solve_backward_euler(u0, p, (0.0, 0.05), jac_prototype)
+
 ncells = p.nx * p.ny
 rho_final = @view u_final[1:ncells]
 mx_final = @view u_final[ncells + 1:2 * ncells]
@@ -208,10 +283,12 @@ ux_grid = reshape(ux_final, p.nx, p.ny)
 uy_grid = reshape(uy_final, p.nx, p.ny)
 
 println("Solved 2D relaxation Euler system on [0,1]x[0,1] with eps = ", p.eps)
-println("Final time = ", prob.tspan[2])
+println("Final time = ", 0.05)
 println("Mean density = ", sum(rho_final) / ncells)
 println("Mean ux = ", sum(ux_final) / ncells)
 println("Mean uy = ", sum(uy_final) / ncells)
+
+print_run_stats("Solve", solve_stats, nsteps_done)
 
 rho_plot = heatmap(x, y, permutedims(rho_grid); xlabel="x", ylabel="y", title="Final density rho", aspect_ratio=:equal)
 savefig(rho_plot, "rho_final_2d.png")

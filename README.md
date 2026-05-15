@@ -1,9 +1,8 @@
 # EulerAP — README
 
 This repository contains a compact 2D relaxation-Euler example implemented in
-`relaxation_euler_2d.jl` using ClimaTimeSteppers for IMEX integration. The
-script is intentionally minimal and uses a finite-volume spatial discretization
-on the periodic domain $[0,1]\times[0,1]$.
+`relaxation_euler_2d.jl`. The script is intentionally minimal and uses a
+finite-volume spatial discretization on the periodic domain $[0,1]\times[0,1]$.
 
 ## PDE / model
 
@@ -21,7 +20,8 @@ $$
 
 Here $\varepsilon$ is the relaxation parameter (named `eps` in the code). As
 $\varepsilon\to 0$ the pressure term $\rho/\varepsilon$ becomes stiff and the
-right-hand-side relaxation terms become dominant — motivating IMEX splitting.
+right-hand-side relaxation terms become dominant — motivating implicit
+treatment of the stiff terms.
 
 The mixed terms
 
@@ -63,45 +63,30 @@ in the `prob` object returned.
   $|u|+c$, with $c=\sqrt{1/\varepsilon}$ in the model) and $F$ are the
   physical flux components for each conserved field.
 
-- `explicit_part!(du, u, p, t)` — builds the explicit spatial flux
-  divergence contribution (finite-volume flux differences) for all cells and
-  stores it in `du`. It implements periodic boundary conditions by wrapping
-  indices when computing neighbor fluxes in x and y directions.
+ - `implicit_part!(du, u, p, t)` — builds the finite-volume flux-divergence
+   contributions (both x and y interfaces) and accumulates them into `du`.
+   This function is also used inside the backward-Euler residual evaluation
+   so the stiff relaxation source for the momentum components is accounted
+   for when assembling the residual.
 
-- `implicit_part!(du, u, p, t)` — evaluates the stiff relaxation source
-  terms. For this model the only implicit terms are the momentum relaxation
-  terms, implemented as
+ - `initial_condition(x,y)` — returns the initial `(rho, mx, my)` at a point.
+   The example uses smooth sin/cos perturbations so the solver exercise is
+   numerically well-behaved.
 
-  $$\partial_t m_x = -m_x/\varepsilon,\qquad \partial_t m_y = -m_y/\varepsilon,$$
-
-  while the density equation has no implicit source here.
-
-- `wfact!(w,u,p,dtgamma,t)` — fills the matrix/factor (`Wfact`) that the
-  ClimaTimeSteppers Newton solver uses during implicit stage solves. The
-  function is written to accept either a `SparseMatrixCSC` or a `Diagonal`
-  matrix prototype and sets the diagonal entries appropriate for the linear
-  part of the implicit operator (it places `-1` in density diagonal entries
-  and `-(1 + dtgamma/eps)` for momentum entries; `dtgamma` is the method
-  coefficient). This helps the Newton linear solver reuse/initialize factor
-  structure efficiently.
-
-- `initial_condition(x,y)` — returns the initial `(rho, mx, my)` at a point.
-  The example uses smooth sin/cos perturbations so the solver exercise is
-  numerically well-behaved.
-
-- `build_problem(; nx, ny, eps, tspan)` — assembles the flattened initial
-  condition vector `u0`, constructs a Jacobian prototype (`Diagonal` by
-  default for efficiency), constructs `CTS.ODEFunction` and `CTS.ClimaODEFunction`
-  wrappers and returns `(prob, x, y, p)` where `prob` is a `ClimaTimeSteppers`
-  `ODEProblem` ready to solve.
+ - `build_problem(; nx, ny, eps, tspan)` — assembles the flattened initial
+   condition vector `u0`, coordinate vectors `x`, `y`, constructs the
+   `RelaxationParams` (`p`) and a sparse Jacobian prototype (`jac_prototype`)
+   and returns `(u0, x, y, p, jac_prototype)`.
 
 ## Time integrator setup
 
-- The code constructs an IMEX algorithm using `CTS.IMEXAlgorithm(CTS.ARS343(),
-  CTS.NewtonsMethod(...))`. This picks an ARS(3,4,3)-type IMEX scheme for
-  time-discretization; the stiff substep is solved with a Newton method
-  (`NewtonsMethod`). The Jacobian template (`jac_prototype`) and `Wfact`
-  are provided so ClimaTimeSteppers can prepare linear solvers efficiently.
+The implementation uses an implicit backward-Euler time-stepping handled via
+the `NonlinearSolve` ecosystem. The function `solve_backward_euler` builds a
+`NonlinearProblem` around the residual implemented in
+`backward_euler_residual!` and solves each implicit step with a
+Newton-style method (`NewtonRaphson`) using `AutoForwardDiff` for Jacobian
+information. A fixed step size `dt` is used by default; the solver advances
+until the final time in `tspan`.
 
 ## I/O / plotting
 
