@@ -3,8 +3,7 @@ using LinearAlgebra
 using NonlinearSolve
 using Plots
 using SparseArrays
-# using SparseDiffTools
-using SparseMatrixColorings
+using SparseMatrixColorings # for sparse AutoDiff to work (otherwise it will switch to dense AD)
 
 # 2D relaxation Euler-like system on [0,1]x[0,1] with periodic BC:
 #   rho_t + (mx)_x + (my)_y = 0

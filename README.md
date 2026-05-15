@@ -88,6 +88,62 @@ Newton-style method (`NewtonRaphson`) using `AutoForwardDiff` for Jacobian
 information. A fixed step size `dt` is used by default; the solver advances
 until the final time in `tspan`.
 
+## Jacobian Matrix Layouts for 2D (3-Variable System)
+
+## 1. Baseline: Single Variable (Scalar 2D)
+If $U$ is just a single scalar (e.g., density $\rho$), grid has $N = N_x \times N_y$ total cells.
+*   **State Vector:** $\mathbf{U} = [\rho_1, \rho_2, \dots, \rho_N]^T$
+*   **Stencil Impact:** Because of the 2D 5-point stencil (Center, Left, Right, Bottom, Top), the Jacobian is an $N \times N$ matrix with exactly **5 non-zero bands**:
+    *   **Main diagonal:** The cell itself ($C$).
+    *   **Two adjacent off-diagonals:** Left ($L$) and Right ($R$) neighbors.
+    *   **Two far off-diagonals:** Bottom ($B$) and Top ($T$) neighbors, located $\pm N_x$ rows away.
+
+This 5-banded structure is often referred to as a **block-tridiagonal matrix** (where the blocks are $N_x \times N_x$ matrices representing entire rows of the grid).
+
+---
+
+## 2. 3 Variables
+Now, $U$ represents 3 quantities: $[\rho, m_x, m_y]$. Total number of unknowns is $3N$. The Jacobian becomes $3N \times 3N$ matrix. They way those 5 original bands map into this matrix depends on the memory layout.
+
+### Layout 1: Interleaved (Array of Structs)
+Memory is ordered cell-by-cell:
+$$ \mathbf{U} = [\rho_1, m_{x1}, m_{y1}, \rho_2, m_{x2}, m_{y2}, \dots, \rho_N, m_{xN}, m_{yN}]^T $$
+
+*   **Structure:** The matrix looks exactly like the scalar block-tridiagonal matrix, but every single scalar entry **"inflates"** into a dense $3 \times 3$ block.
+*   **Mapping:** Where the scalar matrix had a scalar linking cell $c$ to its right neighbor $r$, the interleaved matrix has a $3 \times 3$ dense block mapping the 3 equations of cell $c$ to the 3 variables of cell $r$:
+
+$$ \text{Scalar Entry} \rightarrow \begin{bmatrix} \frac{\partial R^\rho}{\partial \rho} & \frac{\partial R^\rho}{\partial m_x} & \frac{\partial R^\rho}{\partial m_y} \\[6pt] \frac{\partial R^{m_x}}{\partial \rho} & \frac{\partial R^{m_x}}{\partial m_x} & \frac{\partial R^{m_x}}{\partial m_y} \\[6pt] \frac{\partial R^{m_y}}{\partial \rho} & \frac{\partial R^{m_y}}{\partial m_x} & \frac{\partial R^{m_y}}{\partial m_y} \end{bmatrix} $$
+
+*   **Result:** A pentadiagonal/block-tridiagonal matrix where the bands are 3 elements thick.
+
+### Layout 2: Stacked (Struct of Arrays) — *Used in code*
+Memory is ordered variable-by-variable (grouping all densities, then all x-momentums, then all y-momentums):
+$$ \mathbf{U} = [\rho_1 \dots \rho_N, \;\; m_{x1} \dots m_{xN}, \;\; m_{y1} \dots m_{yN}]^T $$
+
+*   **Structure:** The $3 \times 3$ blocks are shattered. The entire Jacobian is partitioned into a $3 \times 3$ grid of $N \times N$ sub-matrices:
+
+$$ \mathbf{J} = \begin{bmatrix} \mathbf{J}_{\rho, \rho} & \mathbf{J}_{\rho, m_x} & \mathbf{J}_{\rho, m_y} \\[6pt] \mathbf{J}_{m_x, \rho} & \mathbf{J}_{m_x, m_x} & \mathbf{J}_{m_x, m_y} \\[6pt] \mathbf{J}_{m_y, \rho} & \mathbf{J}_{m_y, m_x} & \mathbf{J}_{m_y, m_y} \end{bmatrix} $$
+
+*   **Sparsity Benefit:** Every single one of those 9 sub-matrices ($\mathbf{J}_{\rho,\rho}$, $\mathbf{J}_{\rho,m_x}$, etc.) shares the **exact same 5-banded pentadiagonal sparsity pattern** as the single-variable scalar case.
+*   **Example:** $\mathbf{J}_{m_x, \rho}$ is an $N \times N$ pentadiagonal matrix describing how the x-momentum equation in every cell reacts to changes in density in neighboring cells.
+
+---
+
+## 3. Our `jac_prototype` Code
+Our code uses the **Stacked Layout** ($u = [\rho; m_x; m_y]$), we must explicitly build that $3 \times 3$ grid of sub-matrices using loop offsets:
+
+```julia
+row = row_var * ncells + cell 
+col = col_var * ncells + neighbor
+```
+
+*   `cell` and `neighbor` trace out the standard 5-banded pentadiagonal structure within an $N \times N$ space.
+*   `row_var * ncells` shifts the row index down into the correct equation block (e.g., row block 0 for $\rho$, block 1 for $m_x$).
+*   `col_var * ncells` shifts the column index right into the correct variable block (e.g., col block 0 for $\rho$, block 1 for $m_x$).
+
+**Summary:** Moving from 1 to 3 variables either **inflates the bands** to be 3-elements thick (Interleaved) or **duplicates the banded structure** into a $3 \times 3$ grid of identical sparsity patterns (Stacked).
+
+
 ## I/O / plotting
 
 - After the solve the code reshapes the flattened solution into grids and
