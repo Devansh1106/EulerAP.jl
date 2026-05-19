@@ -4,6 +4,11 @@ using NonlinearSolve
 using Plots
 using SparseArrays
 using SparseMatrixColorings # for sparse AutoDiff to work (otherwise it will switch to dense AD)
+using LinearSolve
+# using KLU
+
+linsolve = KLUFactorization()
+
 
 # 2D relaxation Euler-like system on [0,1]x[0,1] with periodic BC:
 #   rho_t + (mx)_x + (my)_y = 0
@@ -16,6 +21,10 @@ struct RelaxationParams
     ny::Int
     dx::Float64
     dy::Float64
+    xmin::Float64
+    xmax::Float64
+    ymin::Float64
+    ymax::Float64
 end
 
 # convert 2D (i,j) cell index to 1D index (flattening in column-major order)
@@ -120,6 +129,7 @@ end
 
 function build_jacobian_prototype(p::RelaxationParams)
     ncells = p.nx * p.ny
+    # notice that jac_prototype is sparse already 
     jac_prototype = spzeros(Float64, 3 * ncells, 3 * ncells)
 
     for j in 1:p.ny
@@ -205,16 +215,20 @@ function print_run_stats(label, stats::RunStats, nsteps_done::Int)
 end
 
 function initial_condition(x, y)
-    rho0 = 1.0 + 0.2 * sin(2 * pi * x) * sin(2 * pi * y)
-    ux0 = 0.1 * cos(2 * pi * x)
-    uy0 = 0.1 * cos(2 * pi * y)
+    # rho0 = 1.0 + 0.2 * sin(2 * pi * x) * sin(2 * pi * y)
+    # ux0 = 0.1 * cos(2 * pi * x)
+    # uy0 = 0.1 * cos(2 * pi * y)
+    r2 = x^2 + y^2
+    rho0 = 1 - 0.25 * exp(2*(1-r2))
+    ux0 = y * exp(1-r2)
+    uy0 = -x * exp(1-r2)
     return rho0, rho0 * ux0, rho0 * uy0
 end
 
-function build_problem(; nx=64, ny=64, eps=0.05, tspan=(0.0, 0.5))
-    x = range(0.0, 1.0; length=nx + 1)[1:end-1]
-    y = range(0.0, 1.0; length=ny + 1)[1:end-1]
-    p = RelaxationParams(eps, nx, ny, 1.0 / nx, 1.0 / ny)
+function build_problem(; nx=32, ny=32, eps=0.05, tspan=(0.0, 0.05), xmin=-1.0, xmax=1.0, ymin=-1.0, ymax=1.0)
+    x = range(xmin, xmax; length=nx + 1)[1:end-1]
+    y = range(ymin, ymax; length=ny + 1)[1:end-1]
+    p = RelaxationParams(eps, nx, ny, (xmax - xmin) / nx, (ymax - ymin) / ny, xmin, xmax, ymin, ymax)
 
     ncells = nx * ny
     u0 = zeros(3 * ncells)
@@ -231,10 +245,11 @@ function build_problem(; nx=64, ny=64, eps=0.05, tspan=(0.0, 0.5))
     return u0, x, y, p, build_jacobian_prototype(p)
 end
 
-function solve_backward_euler(u0, p::RelaxationParams, tspan, jac_prototype; dt=5.0e-3)
+# dt is here in this function
+function solve_backward_euler(u0, p::RelaxationParams, tspan, jac_prototype; dt=5.0e-2)
 
     nls_function = NonlinearFunction(backward_euler_residual!; jac_prototype = jac_prototype)
-    nls_algorithm = NewtonRaphson(; autodiff = AutoForwardDiff(; chunksize = 12), concrete_jac = true)
+    nls_algorithm = NewtonRaphson(; autodiff = AutoForwardDiff(; chunksize = 4), concrete_jac = true, linsolve = linsolve)
 
     u = copy(u0)
     step_data = ImplicitStepData(p, dt, tspan[1], copy(u0), similar(u0))
@@ -243,6 +258,15 @@ function solve_backward_euler(u0, p::RelaxationParams, tspan, jac_prototype; dt=
 
     t = tspan[1]
     nsteps_done = 0
+    nonlinear_problem = NonlinearProblem(nls_function, copy(u), step_data)
+
+    cache = init(
+        nonlinear_problem,
+        nls_algorithm;
+        abstol = 1e-10,
+        reltol = 1e-10
+    )
+
     total_timed = @timed while t < tspan[2] - 10 * eps(tspan[2] + 1.0)
         dt_step = min(dt, tspan[2] - t)
         step_data.dt = dt_step
@@ -251,8 +275,8 @@ function solve_backward_euler(u0, p::RelaxationParams, tspan, jac_prototype; dt=
 
         nsteps_done += 1
         step_timed = @timed begin
-            nonlinear_problem = NonlinearProblem(nls_function, copy(u), step_data)
-            nonlinear_solution = solve(nonlinear_problem, nls_algorithm; abstol = 1e-10, reltol = 1e-10)
+            cache.u .= u
+            nonlinear_solution = solve!(cache)
             u .= nonlinear_solution.u
         end
         stats.step_times[nsteps_done] = step_timed.time
@@ -266,8 +290,9 @@ function solve_backward_euler(u0, p::RelaxationParams, tspan, jac_prototype; dt=
     return u, stats, nsteps_done
 end
 
-u0, x, y, p, jac_prototype = build_problem()
-u_final, solve_stats, nsteps_done = solve_backward_euler(u0, p, (0.0, 0.05), jac_prototype)
+tspan = (0.0, 0.05)
+u0, x, y, p, jac_prototype = build_problem(; nx=32*2, ny=32*2, eps=0.05, tspan) # domain info can also be provided here
+u_final, solve_stats, nsteps_done = solve_backward_euler(u0, p, tspan, jac_prototype; dt=p.dx)
 
 ncells = p.nx * p.ny
 rho_final = @view u_final[1:ncells]
@@ -281,8 +306,8 @@ rho_grid = reshape(rho_final, p.nx, p.ny)
 ux_grid = reshape(ux_final, p.nx, p.ny)
 uy_grid = reshape(uy_final, p.nx, p.ny)
 
-println("Solved 2D relaxation Euler system on [0,1]x[0,1] with eps = ", p.eps)
-println("Final time = ", 0.05)
+println("Solved 2D relaxation Euler system on [", p.xmin, ",", p.xmax, "]x[", p.ymin, ",", p.ymax, "] with eps = ", p.eps)
+println("Final time = ", tspan[2])
 println("Mean density = ", sum(rho_final) / ncells)
 println("Mean ux = ", sum(ux_final) / ncells)
 println("Mean uy = ", sum(uy_final) / ncells)
