@@ -1,4 +1,4 @@
-function print_run_stats(label, stats::RunStats, nsteps_done::Int)
+function print_run_stats(label, stats::RunStats, nsteps_done::Int, model::Union{RelaxationParams, Nothing}=nothing)
 
     if nsteps_done == 0
         println(label, " stats: no steps completed")
@@ -15,17 +15,84 @@ function print_run_stats(label, stats::RunStats, nsteps_done::Int)
 
     println(label, " stats:")
 
-    println("  total GC time = ",
-        round(stats.total_gctime; digits = 6), " s")
+    if model !== nothing
+        println("  grid resolution = ", model.nx, " x ", model.ny)
+    end
 
-    println("  steps completed = ", nsteps_done)
+    println(
+        "  total wall time = ",
+        round(stats.total_time; digits = 6),
+        " s"
+    )
 
-    println("  avg step time = ",
-        round(avg_step_time; digits = 6), " s")
+    println(
+        "  total allocations = ",
+        round(stats.total_bytes / 2^20; digits = 3),
+        " MiB"
+    )
 
-    println("  max step time = ",
-        round(maximum(step_times); digits = 6), " s")
+    println(
+        "  total GC time = ",
+        round(stats.total_gctime; digits = 6),
+        " s"
+    )
 
-    println("  avg step allocations = ",
-        round(avg_step_bytes / 2^20; digits = 3), " MiB")
+    println(
+        "  steps completed = ",
+        nsteps_done
+    )
+
+    println(
+        "  first step time = ",
+        round(step_times[1]; digits = 6),
+        " s"
+    )
+
+    println(
+        "  first step allocations = ",
+        round(step_bytes[1] / 2^20; digits = 3),
+        " MiB"
+    )
+
+    println(
+        "  first step GC time = ",
+        round(step_gctimes[1]; digits = 6),
+        " s"
+    )
+
+    println(
+        "  avg step time = ",
+        round(avg_step_time; digits = 6),
+        " s"
+    )
+
+    println(
+        "  max step time = ",
+        round(maximum(step_times); digits = 6),
+        " s"
+    )
+
+    println(
+        "  avg step allocations = ",
+        round(avg_step_bytes / 2^20; digits = 3),
+        " MiB"
+    )
+
+    println(
+        "  max step allocations = ",
+        round(maximum(step_bytes) / 2^20; digits = 3),
+        " MiB"
+    )
+
+    println(
+        "  avg step GC time = ",
+        round(avg_step_gc; digits = 6),
+        " s"
+    )
+
+    println(
+        "  max step GC time = ",
+        round(maximum(step_gctimes); digits = 6),
+        " s"
+    )
 end
