@@ -1,3 +1,23 @@
-AGENTS.md
-ap_implicit_strategy_notes.md
+# Julia
 Manifest.toml
+
+# sysimages
+*.so
+*.dylib
+*.dll
+
+# plots/output
+# *.png
+*.pdf
+*.jld2
+*.log
+
+# Julia cache
+.julia/
+
+# VSCode
+.vscode/
+
+# HPC outputs
+out_relaxation/
+err_relaxation/
