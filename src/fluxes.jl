@@ -1,8 +1,7 @@
 @inline function rusanov_flux_x(
     rho_l, mx_l, my_l,
     rho_r, mx_r, my_r,
-    eps
-)
+    eps)
 
     ux_l = mx_l / rho_l
     ux_r = mx_r / rho_r
@@ -29,8 +28,7 @@ end
 @inline function rusanov_flux_y(
     rho_l, mx_l, my_l,
     rho_r, mx_r, my_r,
-    eps
-)
+    eps)
 
     uy_l = my_l / rho_l
     uy_r = my_r / rho_r
@@ -53,3 +51,26 @@ end
 
     return f1, f2, f3
 end
+
+# Register built-in fluxes in a type-stable dictionary
+const BUILTIN_FLUXES = Dict{Symbol, FluxPair}(
+    :rusanov => FluxPair(rusanov_flux_x, rusanov_flux_y)
+    # Easily add future additions here: :lax_friedrichs => FluxPair(...)
+)
+
+# Clean input resolution using Multiple Dispatch
+# Case A: User passes a built-in shortcut name (e.g., :rusanov or "rusanov")
+function resolve_flux(flux_name::Symbol)
+    if haskey(BUILTIN_FLUXES, flux_name)
+        return BUILTIN_FLUXES[flux_name]
+    else
+        error("Unknown flux name ':$flux_name'. Supported built-ins are: $(keys(BUILTIN_FLUXES))")
+    end
+end
+
+# Support strings transparently by converting them to a symbol
+resolve_flux(flux_name::AbstractString) = resolve_flux(Symbol(flux_name))
+
+# Case B: User passes a raw 2-tuple of custom functions (e.g., (my_fx, my_fy))
+function resolve_flux(flux_tuple::Tuple{Any, Any})
+    return FluxPair(flux_tuple[1], flux_tuple[2])

@@ -1,3 +1,10 @@
+struct FluxPair{FX,FY}
+    flux_x::FX
+    flux_y::FY
+end
+
+FluxPair(flux_x, flux_y) = FluxPair{typeof(flux_x), typeof(flux_y)}(flux_x, flux_y)
+
 struct RelaxationParams
     eps::Float64
     nx::Int
@@ -20,6 +27,7 @@ mutable struct ImplicitStepData
     t::Float64
     u_prev::Vector{Float64}
     rhs_cache::AbstractVector
+    flux::FluxPair
 end
 
 mutable struct RunStats

@@ -5,8 +5,8 @@ tspan = (0.0, 0.05)
 tol = 1e-8
 
 u0, x, y, p, jac_prototype = build_problem(
-    nx = 64*2,
-    ny = 64*2,
+    nx = 32,
+    ny = 32,
     eps = 0.05
 )
 
@@ -40,7 +40,7 @@ println("Mean density = ", sum(rho_final) / ncells)
 println("Mean ux = ", sum(ux_final) / ncells)
 println("Mean uy = ", sum(uy_final) / ncells)
 
-print_run_stats("Solve", solve_stats, nsteps_done)
+print_run_stats("Solve", solve_stats, nsteps_done, p)
 
 rho_plot = heatmap(
     x,
