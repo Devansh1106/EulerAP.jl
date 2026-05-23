@@ -74,3 +74,8 @@ resolve_flux(flux_name::AbstractString) = resolve_flux(Symbol(flux_name))
 # Case B: User passes a raw 2-tuple of custom functions (e.g., (my_fx, my_fy))
 function resolve_flux(flux_tuple::Tuple{Any, Any})
     return FluxPair(flux_tuple[1], flux_tuple[2])
+end
+
+# Case C: Already a FluxPair - return as-is
+# called in operators.jl in implicit_part!
+resolve_flux(flux_pair::FluxPair) = flux_pair

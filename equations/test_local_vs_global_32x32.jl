@@ -9,10 +9,20 @@ println("=" ^ 70)
 tspan = (0.0, 0.01)  # short run for testing
 
 # Build problem with 32x32 grid
+# Boundary condition knobs for the test (change as needed)
+left_bc_test   = :periodic
+right_bc_test  = :periodic
+bottom_bc_test = :periodic
+top_bc_test    = :periodic
+
 u0_test, x_test, y_test, p_test, jac_proto_test = build_problem(
     nx = 32*2,
     ny = 32*2,
-    eps = 0.05
+    eps = 0.05,
+    left_bc = left_bc_test,
+    right_bc = right_bc_test,
+    bottom_bc = bottom_bc_test,
+    top_bc = top_bc_test
 )
 
 println("\nProblem size: nx=$(p_test.nx), ny=$(p_test.ny)")
@@ -28,7 +38,8 @@ println("Running solver with GLOBAL AD (AutoForwardDiff)...")
     tspan,
     jac_proto_test;
     dt = p_test.dx,
-    tol = 1e-8
+    tol = 1e-8,
+    flux = :rusanov
 )
 
 print_run_stats("Global-AD", stats_global, steps_global)
@@ -43,6 +54,8 @@ println("\nRunning solver with LOCAL-AD (assemble_global_jacobian)...")
     dt = p_test.dx,
     tol = 1e-8,
     jacobian_builder = assemble_global_jacobian
+    ,
+    flux = :rusanov
 )
 
 print_run_stats("Local-AD", stats_local, steps_local)

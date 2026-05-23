@@ -19,31 +19,23 @@ function solve_backward_euler(
     dt = 5.0e-2,    # default values when user does not provide any
     tol = 1e-8,      # default values when user does not provide any
     flux = :rusanov,
-    jacobian_builder = nothing
+    jacobian_builder = assemble_global_jacobian
 )
-
     resolved_flux = resolve_flux(flux)
-    if jacobian_builder === nothing
-        nls_function = NonlinearFunction(
-                       backward_euler_residual!;
-                       jac_prototype = jac_prototype
-        )
-    else
-        # jacobian_builder is expected to have signature jacobian_builder(u, model; flux=...) -> SparseMatrixCSC
-        # jac must be in-place since residual is in-place
-        jac_fun = (J, u, step_data) -> begin
-            J_new = jacobian_builder(u, step_data.model; flux = step_data.flux)
-            copyto!(J, J_new)
-        end
-        nls_function = NonlinearFunction(
-                       backward_euler_residual!;
-                       jac = jac_fun,
-                       jac_prototype = jac_prototype)
 
+    # jacobian_builder is expected to have signature jacobian_builder(J_prototype, u, model; flux=..., t=...)
+    # It should fill J_prototype.nzval in-place and return it. jac_fun will copy into the solver's J.
+    jac_fun = (J, u, step_data) -> begin
+        jacobian_builder(J, u, step_data.model; flux = step_data.flux, t = step_data.t)
+        return J
     end
 
+    nls_function = NonlinearFunction(
+                   backward_euler_residual!;
+                   jac = jac_fun,
+                   jac_prototype = jac_prototype)
+
     nls_algorithm = NewtonRaphson(
-                    autodiff = AutoForwardDiff(; chunksize = 4),
                     concrete_jac = true,
                     linsolve = linsolve)
 
@@ -63,7 +55,7 @@ function solve_backward_euler(
 
     nonlinear_problem = NonlinearProblem(
                         nls_function,
-                        copy(u),
+                        u,
                         step_data)
 
     cache = init(

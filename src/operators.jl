@@ -68,31 +68,29 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
     return nothing
 end
 
-function gather_local_state(u, i::Int, j::Int, p::RelaxationParams)
+function gather_local_state(u, i::Int, j::Int, p::RelaxationParams, t::Float64 = 0.0)
 
     ncells = p.nx * p.ny
-    left   = cell_index(i == 1    ? p.nx : i - 1, j, p)
-    right  = cell_index(i == p.nx ? 1    : i + 1, j, p)
-    bottom = cell_index(i, j == 1    ? p.ny : j - 1, p)
-    top    = cell_index(i, j == p.ny ? 1    : j + 1, p)
     center = cell_index(i, j, p)
+    left_i   = i == 1    ? p.nx : i - 1
+    right_i  = i == p.nx ? 1    : i + 1
+    bottom_j = j == 1    ? p.ny : j - 1
+    top_j    = j == p.ny ? 1    : j + 1
 
-    idxs = (
-        center,
-        left,
-        right,
-        bottom,
-        top
+    # Get states at center and neighbors, applying BCs if needed
+    rho_c, mx_c, my_c = get_boundary_state(i, j, p, u, t)
+    rho_l, mx_l, my_l = get_boundary_state(left_i, j, p, u, t)
+    rho_r, mx_r, my_r = get_boundary_state(right_i, j, p, u, t)
+    rho_b, mx_b, my_b = get_boundary_state(i, bottom_j, p, u, t)
+    rho_t, mx_t, my_t = get_boundary_state(i, top_j, p, u, t)
+
+    return (
+        rho_c, mx_c, my_c,
+        rho_l, mx_l, my_l,
+        rho_r, mx_r, my_r,
+        rho_b, mx_b, my_b,
+        rho_t, mx_t, my_t,
     )
-    local_u = zeros(eltype(u), 15)
-    k = 1
-    for idx in idxs
-        local_u[k]      = u[idx]
-        local_u[k + 1]  = u[ncells + idx]
-        local_u[k + 2]  = u[2 * ncells + idx]
-        k += 3
-    end
-    return local_u
 end
 
 function local_residual(local_u, p::RelaxationParams; flux = :rusanov)

@@ -1,13 +1,33 @@
 using EulerAP
 using Plots
 
-tspan = (0.0, 0.05)
+tspan = (0.0, 0.5)
 tol = 1e-8
 
+# Boundary condition choices: :periodic, :dirichlet, :neumann
+# Set per-side BCs here (can change before running)
+left_bc   = :periodic
+right_bc  = :periodic
+bottom_bc = :periodic
+top_bc    = :periodic
+
 u0, x, y, p, jac_prototype = build_problem(
-    nx = 32,
-    ny = 32,
-    eps = 0.05
+    nx = 16,
+    ny = 16,
+    eps = 0.05,
+    left_bc = left_bc,
+    right_bc = right_bc,
+    bottom_bc = bottom_bc,
+    top_bc = top_bc
+)
+u0, x, y, p, jac_prototype = build_problem(
+    nx = 128,
+    ny = 128,
+    eps = 0.05,
+    left_bc = left_bc,
+    right_bc = right_bc,
+    bottom_bc = bottom_bc,
+    top_bc = top_bc
 )
 
 u_final, solve_stats, nsteps_done =
@@ -17,7 +37,9 @@ u_final, solve_stats, nsteps_done =
         tspan,
         jac_prototype;
         dt = p.dx,
-        tol = tol
+        tol = tol,
+        jacobian_builder = assemble_global_jacobian,
+        flux = :rusanov
     )
 
 ncells = p.nx * p.ny

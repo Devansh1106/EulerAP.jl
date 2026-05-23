@@ -3,7 +3,7 @@ struct FluxPair{FX,FY}
     flux_y::FY
 end
 
-FluxPair(flux_x, flux_y) = FluxPair{typeof(flux_x), typeof(flux_y)}(flux_x, flux_y)
+# FluxPair(flux_x, flux_y) = FluxPair{typeof(flux_x), typeof(flux_y)}(flux_x, flux_y)
 
 struct RelaxationParams
     eps::Float64
@@ -15,6 +15,7 @@ struct RelaxationParams
     xmax::Float64
     ymin::Float64
     ymax::Float64
+    bc_config::Any  # BCConfig (defined in boundary_conditions.jl)
 end
 
 @inline function cell_index(i, j, p::RelaxationParams)

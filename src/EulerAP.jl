@@ -1,11 +1,9 @@
 module EulerAP
 
-using ADTypes
 using ForwardDiff
 using NonlinearSolve
 using SparseArrays
 using StaticArrays
-using SparseMatrixColorings
 using LinearSolve
 
 export RelaxationParams
@@ -19,9 +17,12 @@ export gather_local_state
 export local_residual
 export local_jacobian
 export assemble_global_jacobian
+export BCConfig, PeriodicBC, DirichletBC, NeumannBC
+export apply_bc, get_bc_config, get_boundary_state
 
 include("types.jl")
 include("fluxes.jl")
+include("boundary_conditions.jl")
 include("operators.jl")
 include("jacobian.jl")
 include("initial_condition.jl")
