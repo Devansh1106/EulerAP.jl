@@ -58,5 +58,5 @@ function build_problem(;
             u0[2 * ncells + idx] = my0
         end
     end
-    return u0, x, y, p, build_jacobian_prototype(p)
+    return u0, x, y, p, build_jacobian_cache(p)
 end

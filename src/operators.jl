@@ -19,14 +19,28 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
     for j in 1:p.ny
         for i in 1:p.nx
 
-            i_right = i == p.nx ? 1 : i + 1 # TODO: is it because of periodic boundary?
+            # neighbor to the right; allow indices outside domain so BC handler
+            # (`get_boundary_state`) can supply ghost values for non-periodic BCs
+            i_right = i + 1
 
             l = cell_index(i, j, p)
-            r = cell_index(i_right, j, p)
+
+            # left (interior) state
+            rho_l = rho[l]; mx_l = mx[l]; my_l = my[l]
+
+            # right state: either interior (has index) or obtained from BCs
+            if 1 <= i_right <= p.nx
+                r = cell_index(i_right, j, p)
+                rho_r = rho[r]; mx_r = mx[r]; my_r = my[r]
+                right_interior = true
+            else
+                rho_r, mx_r, my_r = get_boundary_state(i_right, j, p, u, t)
+                right_interior = false
+            end
 
             f1, f2, f3 = flux.flux_x(
-                rho[l], mx[l], my[l],
-                rho[r], mx[r], my[r],
+                rho_l, mx_l, my_l,
+                rho_r, mx_r, my_r,
                 p.eps
             )
 
@@ -34,24 +48,37 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
             dmx[l]  -= f2 / p.dx
             dmy[l]  -= f3 / p.dx
 
-            drho[r] += f1 / p.dx
-            dmx[r]  += f2 / p.dx
-            dmy[r]  += f3 / p.dx
+            if right_interior
+                drho[r] += f1 / p.dx
+                dmx[r]  += f2 / p.dx
+                dmy[r]  += f3 / p.dx
+            end
         end
     end
 
     for j in 1:p.ny
 
-        j_top = j == p.ny ? 1 : j + 1 # TODO: is it because of periodic boundary?
+        # neighbor above; allow out-of-domain index so BCs can be applied
+        j_top = j + 1
 
         for i in 1:p.nx
 
             b = cell_index(i, j, p)
-            t = cell_index(i, j_top, p)
+
+            rho_b = rho[b]; mx_b = mx[b]; my_b = my[b]
+
+            if 1 <= j_top <= p.ny
+                t = cell_index(i, j_top, p)
+                rho_t = rho[t]; mx_t = mx[t]; my_t = my[t]
+                top_interior = true
+            else
+                rho_t, mx_t, my_t = get_boundary_state(i, j_top, p, u, t)
+                top_interior = false
+            end
 
             f1, f2, f3 = flux.flux_y(
-                rho[b], mx[b], my[b],
-                rho[t], mx[t], my[t],
+                rho_b, mx_b, my_b,
+                rho_t, mx_t, my_t,
                 p.eps
             )
 
@@ -59,9 +86,11 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
             dmx[b]  -= f2 / p.dy
             dmy[b]  -= f3 / p.dy
 
-            drho[t] += f1 / p.dy
-            dmx[t]  += f2 / p.dy
-            dmy[t]  += f3 / p.dy
+            if top_interior
+                drho[t] += f1 / p.dy
+                dmx[t]  += f2 / p.dy
+                dmy[t]  += f3 / p.dy
+            end
         end
     end
 
@@ -72,10 +101,13 @@ function gather_local_state(u, i::Int, j::Int, p::RelaxationParams, t::Float64 =
 
     ncells = p.nx * p.ny
     center = cell_index(i, j, p)
-    left_i   = i == 1    ? p.nx : i - 1
-    right_i  = i == p.nx ? 1    : i + 1
-    bottom_j = j == 1    ? p.ny : j - 1
-    top_j    = j == p.ny ? 1    : j + 1
+    # Use neighbor indices that may lie outside the domain boundary so that
+    # `get_boundary_state` can apply the configured BC (periodic, Dirichlet,
+    # Neumann)
+    left_i   = i - 1
+    right_i  = i + 1
+    bottom_j = j - 1
+    top_j    = j + 1
 
     # Get states at center and neighbors, applying BCs if needed
     rho_c, mx_c, my_c = get_boundary_state(i, j, p, u, t)
@@ -84,7 +116,7 @@ function gather_local_state(u, i::Int, j::Int, p::RelaxationParams, t::Float64 =
     rho_b, mx_b, my_b = get_boundary_state(i, bottom_j, p, u, t)
     rho_t, mx_t, my_t = get_boundary_state(i, top_j, p, u, t)
 
-    return (
+    return ( # this tuple is actually local_u
         rho_c, mx_c, my_c,
         rho_l, mx_l, my_l,
         rho_r, mx_r, my_r,
