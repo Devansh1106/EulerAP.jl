@@ -1,10 +1,20 @@
+"""
+    FluxPair{FX,FY}
+
+Container for a pair of numerical flux functions. `flux_x` is used for
+vertical interfaces and `flux_y` is used for horizontal interfaces.
+"""
 struct FluxPair{FX,FY}
     flux_x::FX
     flux_y::FY
 end
 
-# FluxPair(flux_x, flux_y) = FluxPair{typeof(flux_x), typeof(flux_y)}(flux_x, flux_y)
 
+"""
+    RelaxationParams
+
+Model and grid parameters for the 2D relaxation-Euler problem.
+"""
 struct RelaxationParams
     eps::Float64
     nx::Int
@@ -22,6 +32,12 @@ end
     return (j - 1) * p.nx + i
 end
 
+"""
+    ImplicitStepData
+
+Mutable container passed through the nonlinear solver for one backward-Euler
+step.
+"""
 mutable struct ImplicitStepData
     model::RelaxationParams
     dt::Float64
@@ -31,6 +47,11 @@ mutable struct ImplicitStepData
     flux::FluxPair
 end
 
+"""
+    RunStats
+
+Timing and allocation statistics collected while advancing the solution.
+"""
 mutable struct RunStats
     total_time::Float64
     total_bytes::Int
@@ -40,6 +61,11 @@ mutable struct RunStats
     step_gctimes::Vector{Float64}
 end
 
+"""
+    RunStats(nsteps::Int)
+
+Create an empty statistics container sized for `nsteps` time steps.
+"""
 function RunStats(nsteps::Int)
     return RunStats(
         0.0,

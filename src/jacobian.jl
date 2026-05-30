@@ -89,6 +89,12 @@ struct SparseJacobianCache{T, Ti, TIn, TOut, TJ, TCfg, F}
 end
 
 # --- Cache Builder ---
+"""
+    build_jacobian_cache(p; flux=:rusanov)
+
+Build the sparse Jacobian prototype and cached ForwardDiff buffers used by the
+backward-Euler solve.
+"""
 function build_jacobian_cache(p::RelaxationParams; flux = :rusanov)
     ncells = p.nx * p.ny
     n = 3 * ncells
@@ -193,6 +199,12 @@ function build_jacobian_cache(p::RelaxationParams; flux = :rusanov)
 end
 
 
+"""
+    assemble_global_jacobian!(cache, u, p, dt, t; flux=:rusanov)
+
+Assemble the backward-Euler Jacobian `I - dt * dF/du` into the cached sparse
+matrix.
+"""
 function assemble_global_jacobian!(cache::SparseJacobianCache, u, p::RelaxationParams, dt::Float64, t::Float64; flux = :rusanov)
     nz = cache.J.nzval
     positions = cache.positions

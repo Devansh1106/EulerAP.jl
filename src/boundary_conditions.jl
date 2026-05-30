@@ -1,10 +1,33 @@
-# Boundary Condition Infrastructure
+"""
+    AbstractBC
+
+Abstract boundary-condition type used by the ghost-cell lookup machinery.
+"""
 abstract type AbstractBC end
 
+"""
+    PeriodicBC
+
+Periodic boundary condition.
+"""
 struct PeriodicBC <: AbstractBC end
+
+"""
+    DirichletBC(f)
+
+Dirichlet boundary condition defined by a user function `f(x, y, t)` that
+returns `(rho, mx, my)`.
+"""
 struct DirichletBC{F} <: AbstractBC
     bc_func::F  # (x, y, t) -> (rho, mx, my)
 end
+
+"""
+    NeumannBC(f)
+
+Neumann boundary condition defined by a user function `f(x, y, t)` returning
+the normal derivatives `(d_rho/dn, d_mx/dn, d_my/dn)`.
+"""
 struct NeumannBC{F} <: AbstractBC
     bc_func::F  # (x, y, t) -> (rho, mx, my) - gradient values
 end

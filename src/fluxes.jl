@@ -1,3 +1,9 @@
+"""
+    rusanov_flux_x(rho_l, mx_l, my_l, rho_r, mx_r, my_r, eps)
+
+Rusanov numerical flux for a vertical interface. Returns the flux of
+`(rho, mx, my)` in the x-direction.
+"""
 @inline function rusanov_flux_x(
     rho_l, mx_l, my_l,
     rho_r, mx_r, my_r,
@@ -31,6 +37,12 @@
     return f1, f2, f3
 end
 
+"""
+    rusanov_flux_y(rho_l, mx_l, my_l, rho_r, mx_r, my_r, eps)
+
+Rusanov numerical flux for a horizontal interface. Returns the flux of
+`(rho, mx, my)` in the y-direction.
+"""
 @inline function rusanov_flux_y(
     rho_l, mx_l, my_l,
     rho_r, mx_r, my_r,
@@ -71,6 +83,13 @@ const BUILTIN_FLUXES = Dict{Symbol, FluxPair}(
 
 # Clean input resolution using Multiple Dispatch
 # Case A: User passes a built-in shortcut name (e.g., :rusanov or "rusanov")
+"""
+    resolve_flux(flux_name)
+
+Resolve a flux specification to a `FluxPair`. Supported inputs are the symbol
+`:rusanov`, the string `"rusanov"`, a two-function tuple, or an existing
+`FluxPair`.
+"""
 function resolve_flux(flux_name::Symbol)
     if haskey(BUILTIN_FLUXES, flux_name)
         return BUILTIN_FLUXES[flux_name]
@@ -83,6 +102,11 @@ end
 resolve_flux(flux_name::AbstractString) = resolve_flux(Symbol(flux_name))
 
 # Case B: User passes a raw 2-tuple of custom functions (e.g., (my_fx, my_fy))
+"""
+    resolve_flux((flux_x, flux_y))
+
+Wrap a pair of callables as a `FluxPair`.
+"""
 function resolve_flux(flux_tuple::Tuple{Any, Any})
     return FluxPair(flux_tuple[1], flux_tuple[2])
 end

@@ -1,5 +1,10 @@
 const linsolve = KLUFactorization()
 
+"""
+    backward_euler_residual!(res, u, p::ImplicitStepData)
+
+Residual callback used by the nonlinear solver for one backward-Euler step.
+"""
 function backward_euler_residual!(res, u, p::ImplicitStepData)
     # Safely allocate rhs_cache once if dimensions or types mismatch
     if !(eltype(p.rhs_cache) === eltype(u) && length(p.rhs_cache) == length(u))
@@ -13,6 +18,12 @@ function backward_euler_residual!(res, u, p::ImplicitStepData)
     return nothing
 end
 
+"""
+    solve_backward_euler(u0, p, tspan, jac_cache; kwargs...)
+
+Advance the solution with fixed-step backward Euler and return the final state,
+run statistics, and number of steps completed.
+"""
 function solve_backward_euler(
     u0,
     p::RelaxationParams,

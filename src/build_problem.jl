@@ -1,3 +1,9 @@
+"""
+    build_problem(; kwargs...)
+
+Construct the initial state, grid coordinates, model parameters, and Jacobian
+cache.
+"""
 function build_problem(;
     ic_func,
     nx = 32,        # optional parameters when nothing is provided by the user

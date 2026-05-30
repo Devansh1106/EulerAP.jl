@@ -1,3 +1,9 @@
+"""
+    implicit_part!(du, u, p::RelaxationParams, t; flux=:rusanov)
+
+Assemble the finite-volume spatial operator and relaxation source terms into
+`du` for the stacked state vector `u`.
+"""
 function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
 
     flux = resolve_flux(flux)
@@ -139,6 +145,12 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
     return nothing
 end
 
+"""
+    gather_local_state(u, i, j, p, t=0.0)
+
+Collect the 3×5 stencil around cell `(i, j)` in the layout expected by
+`local_residual`.
+"""
 function gather_local_state(u, i::Int, j::Int, p::RelaxationParams, t::Float64 = 0.0)
     ncells = p.nx * p.ny
     center = cell_index(i, j, p)
@@ -166,6 +178,11 @@ function gather_local_state(u, i::Int, j::Int, p::RelaxationParams, t::Float64 =
     )
 end
 
+"""
+    local_residual(local_u, p::RelaxationParams; flux=:rusanov)
+
+Return the three-component residual for a single cell from its local stencil.
+"""
 function local_residual(local_u, p::RelaxationParams; flux = :rusanov)
     flux = resolve_flux(flux)
 

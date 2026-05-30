@@ -1,3 +1,8 @@
+"""
+    print_run_stats(label, stats, nsteps_done, model=nothing)
+
+Print a compact summary of wall time, allocations, and GC time for a run.
+"""
 function print_run_stats(label, stats::RunStats, nsteps_done::Int, model::Union{RelaxationParams, Nothing}=nothing)
 
     if nsteps_done == 0
