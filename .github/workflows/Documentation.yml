@@ -1,11 +1,7 @@
 name: Documentation
 
 on:
-  push:
-    branches:
-      - main # Trigger on pushes to main branch
-    tags: '*'
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
