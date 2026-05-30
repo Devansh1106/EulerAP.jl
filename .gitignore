@@ -14,6 +14,7 @@ Manifest.toml
 
 # Julia cache
 .julia/
+docs/build/
 
 # VSCode
 .vscode/

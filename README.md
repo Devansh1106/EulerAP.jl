@@ -1,7 +1,7 @@
 # EulerAP — README
 
 This repository contains a compact 2D relaxation-Euler example implemented in
-`relaxation_euler_2d.jl`. The script is intentionally minimal and uses a
+`relaxation_euler2d.jl`. The script is intentionally minimal and uses a
 finite-volume spatial discretization on the periodic domain $[0,1]\times[0,1]$.
 
 ## PDE / model
@@ -166,15 +166,15 @@ col = col_var * ncells + neighbor
 
 ## Where to look in the source
 
-- Implementation and function definitions: [relaxation_euler_2d.jl](relaxation_euler_2d.jl)
+- Implementation and function definitions: [relaxation_euler2d.jl](relaxation_euler2d.jl)
 - Top-level runner / defaults are in the same file; edit `build_problem` or
-  the call-site near the bottom of `relaxation_euler_2d.jl` to change grid
+  the call-site near the bottom of `relaxation_euler2d.jl` to change grid
   size, `eps`, or final time.
 
 ## Quick run (from repo root)
 
 ```bash
-julia --project=. relaxation_euler_2d.jl
+julia --project=. relaxation_euler2d.jl
 ```
 
 ## References
