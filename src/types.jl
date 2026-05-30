@@ -43,7 +43,6 @@ mutable struct ImplicitStepData
     dt::Float64
     t::Float64
     u_prev::Vector{Float64}
-    rhs_cache::AbstractVector
     flux::FluxPair
 end
 

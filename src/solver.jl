@@ -6,15 +6,15 @@ const linsolve = KLUFactorization()
 Residual callback used by the nonlinear solver for one backward-Euler step.
 """
 function backward_euler_residual!(res, u, p::ImplicitStepData)
-    # Safely allocate rhs_cache once if dimensions or types mismatch
-    if !(eltype(p.rhs_cache) === eltype(u) && length(p.rhs_cache) == length(u))
-        p.rhs_cache = similar(u)
-    end
+    # 1. Compute the spatial fluxes directly into the solver's thread-safe `res` vector.
+    # This completely overwrites `res` with the spatial RHS.
+    implicit_part!(res, u, p.model, p.t; flux = p.flux)
     
-    implicit_part!(p.rhs_cache, u, p.model, p.t; flux = p.flux)
+    # 2. Convert the spatial RHS into the Backward Euler residual IN-PLACE.
+    # Julia's `@.` loop safely reads from `res` and writes back to `res` 
+    # element-by-element without allocating a single byte.
+    @. res = u - p.u_prev - p.dt * res
     
-    # Fused in-place update
-    @. res = u - p.u_prev - p.dt * p.rhs_cache
     return nothing
 end
 
@@ -60,7 +60,7 @@ function solve_backward_euler(
     u = copy(u0)
 
     step_data = ImplicitStepData(
-        p, dt, tspan[1], copy(u0), similar(u0), resolved_flux
+        p, dt, tspan[1], copy(u0), resolved_flux
     )
 
     nsteps_target = ceil(Int, (tspan[2] - tspan[1]) / dt)
