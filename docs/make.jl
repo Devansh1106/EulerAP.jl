@@ -28,5 +28,5 @@ makedocs(
 
 deploydocs(
     repo = "://github.com",
-    devbranch = "jacobian_assembly_fully_implicit"
+    devbranch = "main"
 )
