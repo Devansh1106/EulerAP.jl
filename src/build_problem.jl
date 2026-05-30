@@ -20,8 +20,13 @@ function build_problem(;
     bc_funcs = nothing,
     flux = :rusanov
 )
-    x = range(xmin, xmax; length = nx + 1)[1:end-1]
-    y = range(ymin, ymax; length = ny + 1)[1:end-1]
+
+    dx = (xmax - xmin) / nx
+    dy = (ymax - ymin) / ny
+
+    # Generate arrays representing the cell centers
+    x = range(xmin + dx/2, xmax - dx/2; length = nx)
+    y = range(ymin + dy/2, ymax - dy/2; length = ny)
 
     # Create boundary condition configuration
     bc_config = BCConfig(

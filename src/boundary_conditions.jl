@@ -193,7 +193,7 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
         interior_i = 1 
         interior_j = neighbor_j
         if interior_j < 1 || interior_j > p.ny # if it's a ghost cell in j
-            interior_j = mod(interior_j - 1, p.ny) + 1  # Wrap if needed
+            interior_j = clamp(neighbor_j, 1, p.ny)  # clamp if needed (do not wrap it)
         end
         x_interior = p.xmin
         interior_state = _state_at(u, interior_i, interior_j, p)
@@ -209,7 +209,7 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
 
         interior_i, interior_j = p.nx, neighbor_j
         if interior_j < 1 || interior_j > p.ny
-            interior_j = mod(interior_j - 1, p.ny) + 1
+            interior_j = clamp(neighbor_j, 1, p.ny)
         end
         x_interior = p.xmax
         interior_state = _state_at(u, interior_i, interior_j, p)
@@ -225,7 +225,7 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
 
         interior_i, interior_j = neighbor_i, 1
         if interior_i < 1 || interior_i > p.nx
-            interior_i = mod(interior_i - 1, p.nx) + 1
+            interior_i = clamp(neighbor_i, 1, p.nx)
         end
         y_interior = p.ymin
         interior_state = _state_at(u, interior_i, interior_j, p)
@@ -241,7 +241,7 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
 
         interior_i, interior_j = neighbor_i, p.ny
         if interior_i < 1 || interior_i > p.nx
-            interior_i = mod(interior_i - 1, p.nx) + 1
+            interior_i = clamp(neighbor_i, 1, p.nx)
         end
         y_interior = p.ymax
         interior_state = _state_at(u, interior_i, interior_j, p)
