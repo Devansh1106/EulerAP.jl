@@ -27,6 +27,7 @@ makedocs(
 )
 
 deploydocs(
-    repo = "://github.com",
-    devbranch = "main"
+    repo = "://github.com" * get(ENV, "GITHUB_REPOSITORY", "Devansh1106/EulerAP.jl") * ".git",
+    devbranch = "main",
 )
+
