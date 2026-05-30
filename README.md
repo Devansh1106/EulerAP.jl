@@ -1,9 +1,8 @@
 # EulerAP — README
 
 This repository contains a compact 2D relaxation-Euler example implemented in
-`relaxation_euler_2d.jl` using ClimaTimeSteppers for IMEX integration. The
-script is intentionally minimal and uses a finite-volume spatial discretization
-on the periodic domain $[0,1]\times[0,1]$.
+`relaxation_euler2d.jl`. The script is intentionally minimal and uses a
+finite-volume spatial discretization on the periodic domain $[0,1]\times[0,1]$.
 
 ## PDE / model
 
@@ -21,7 +20,8 @@ $$
 
 Here $\varepsilon$ is the relaxation parameter (named `eps` in the code). As
 $\varepsilon\to 0$ the pressure term $\rho/\varepsilon$ becomes stiff and the
-right-hand-side relaxation terms become dominant — motivating IMEX splitting.
+right-hand-side relaxation terms become dominant — motivating implicit
+treatment of the stiff terms.
 
 The mixed terms
 
@@ -63,45 +63,86 @@ in the `prob` object returned.
   $|u|+c$, with $c=\sqrt{1/\varepsilon}$ in the model) and $F$ are the
   physical flux components for each conserved field.
 
-- `explicit_part!(du, u, p, t)` — builds the explicit spatial flux
-  divergence contribution (finite-volume flux differences) for all cells and
-  stores it in `du`. It implements periodic boundary conditions by wrapping
-  indices when computing neighbor fluxes in x and y directions.
+ - `implicit_part!(du, u, p, t)` — builds the finite-volume flux-divergence
+   contributions (both x and y interfaces) and accumulates them into `du`.
+   This function is also used inside the backward-Euler residual evaluation
+   so the stiff relaxation source for the momentum components is accounted
+   for when assembling the residual.
 
-- `implicit_part!(du, u, p, t)` — evaluates the stiff relaxation source
-  terms. For this model the only implicit terms are the momentum relaxation
-  terms, implemented as
+ - `initial_condition(x,y)` — returns the initial `(rho, mx, my)` at a point.
+   The example uses smooth sin/cos perturbations so the solver exercise is
+   numerically well-behaved.
 
-  $$\partial_t m_x = -m_x/\varepsilon,\qquad \partial_t m_y = -m_y/\varepsilon,$$
-
-  while the density equation has no implicit source here.
-
-- `wfact!(w,u,p,dtgamma,t)` — fills the matrix/factor (`Wfact`) that the
-  ClimaTimeSteppers Newton solver uses during implicit stage solves. The
-  function is written to accept either a `SparseMatrixCSC` or a `Diagonal`
-  matrix prototype and sets the diagonal entries appropriate for the linear
-  part of the implicit operator (it places `-1` in density diagonal entries
-  and `-(1 + dtgamma/eps)` for momentum entries; `dtgamma` is the method
-  coefficient). This helps the Newton linear solver reuse/initialize factor
-  structure efficiently.
-
-- `initial_condition(x,y)` — returns the initial `(rho, mx, my)` at a point.
-  The example uses smooth sin/cos perturbations so the solver exercise is
-  numerically well-behaved.
-
-- `build_problem(; nx, ny, eps, tspan)` — assembles the flattened initial
-  condition vector `u0`, constructs a Jacobian prototype (`Diagonal` by
-  default for efficiency), constructs `CTS.ODEFunction` and `CTS.ClimaODEFunction`
-  wrappers and returns `(prob, x, y, p)` where `prob` is a `ClimaTimeSteppers`
-  `ODEProblem` ready to solve.
+ - `build_problem(; nx, ny, eps, tspan)` — assembles the flattened initial
+   condition vector `u0`, coordinate vectors `x`, `y`, constructs the
+   `RelaxationParams` (`p`) and a sparse Jacobian prototype (`jac_prototype`)
+   and returns `(u0, x, y, p, jac_prototype)`.
 
 ## Time integrator setup
 
-- The code constructs an IMEX algorithm using `CTS.IMEXAlgorithm(CTS.ARS343(),
-  CTS.NewtonsMethod(...))`. This picks an ARS(3,4,3)-type IMEX scheme for
-  time-discretization; the stiff substep is solved with a Newton method
-  (`NewtonsMethod`). The Jacobian template (`jac_prototype`) and `Wfact`
-  are provided so ClimaTimeSteppers can prepare linear solvers efficiently.
+The implementation uses an implicit backward-Euler time-stepping handled via
+the `NonlinearSolve` ecosystem. The function `solve_backward_euler` builds a
+`NonlinearProblem` around the residual implemented in
+`backward_euler_residual!` and solves each implicit step with a
+Newton-style method (`NewtonRaphson`) using `AutoForwardDiff` for Jacobian
+information. A fixed step size `dt` is used by default; the solver advances
+until the final time in `tspan`.
+
+## Jacobian Matrix Layouts for 2D (3-Variable System)
+
+## 1. Baseline: Single Variable (Scalar 2D)
+If $U$ is just a single scalar (e.g., density $\rho$), grid has $N = N_x \times N_y$ total cells.
+*   **State Vector:** $\mathbf{U} = [\rho_1, \rho_2, \dots, \rho_N]^T$
+*   **Stencil Impact:** Because of the 2D 5-point stencil (Center, Left, Right, Bottom, Top), the Jacobian is an $N \times N$ matrix with exactly **5 non-zero bands**:
+    *   **Main diagonal:** The cell itself ($C$).
+    *   **Two adjacent off-diagonals:** Left ($L$) and Right ($R$) neighbors.
+    *   **Two far off-diagonals:** Bottom ($B$) and Top ($T$) neighbors, located $\pm N_x$ rows away.
+
+This 5-banded structure is often referred to as a **block-tridiagonal matrix** (where the blocks are $N_x \times N_x$ matrices representing entire rows of the grid).
+
+---
+
+## 2. 3 Variables
+Now, $U$ represents 3 quantities: $[\rho, m_x, m_y]$. Total number of unknowns is $3N$. The Jacobian becomes $3N \times 3N$ matrix. They way those 5 original bands map into this matrix depends on the memory layout.
+
+### Layout 1: Interleaved (Array of Structs)
+Memory is ordered cell-by-cell:
+$$ \mathbf{U} = [\rho_1, m_{x1}, m_{y1}, \rho_2, m_{x2}, m_{y2}, \dots, \rho_N, m_{xN}, m_{yN}]^T $$
+
+*   **Structure:** The matrix looks exactly like the scalar block-tridiagonal matrix, but every single scalar entry **"inflates"** into a dense $3 \times 3$ block.
+*   **Mapping:** Where the scalar matrix had a scalar linking cell $c$ to its right neighbor $r$, the interleaved matrix has a $3 \times 3$ dense block mapping the 3 equations of cell $c$ to the 3 variables of cell $r$:
+
+$$ \text{Scalar Entry} \rightarrow \begin{bmatrix} \frac{\partial R^\rho}{\partial \rho} & \frac{\partial R^\rho}{\partial m_x} & \frac{\partial R^\rho}{\partial m_y} \\[6pt] \frac{\partial R^{m_x}}{\partial \rho} & \frac{\partial R^{m_x}}{\partial m_x} & \frac{\partial R^{m_x}}{\partial m_y} \\[6pt] \frac{\partial R^{m_y}}{\partial \rho} & \frac{\partial R^{m_y}}{\partial m_x} & \frac{\partial R^{m_y}}{\partial m_y} \end{bmatrix} $$
+
+*   **Result:** A pentadiagonal/block-tridiagonal matrix where the bands are 3 elements thick.
+
+### Layout 2: Stacked (Struct of Arrays) — *Used in code*
+Memory is ordered variable-by-variable (grouping all densities, then all x-momentums, then all y-momentums):
+$$ \mathbf{U} = [\rho_1 \dots \rho_N, \;\; m_{x1} \dots m_{xN}, \;\; m_{y1} \dots m_{yN}]^T $$
+
+*   **Structure:** The $3 \times 3$ blocks are shattered. The entire Jacobian is partitioned into a $3 \times 3$ grid of $N \times N$ sub-matrices:
+
+$$ \mathbf{J} = \begin{bmatrix} \mathbf{J}_{\rho, \rho} & \mathbf{J}_{\rho, m_x} & \mathbf{J}_{\rho, m_y} \\[6pt] \mathbf{J}_{m_x, \rho} & \mathbf{J}_{m_x, m_x} & \mathbf{J}_{m_x, m_y} \\[6pt] \mathbf{J}_{m_y, \rho} & \mathbf{J}_{m_y, m_x} & \mathbf{J}_{m_y, m_y} \end{bmatrix} $$
+
+*   **Sparsity Benefit:** Every single one of those 9 sub-matrices ($\mathbf{J}_{\rho,\rho}$, $\mathbf{J}_{\rho,m_x}$, etc.) shares the **exact same 5-banded pentadiagonal sparsity pattern** as the single-variable scalar case.
+*   **Example:** $\mathbf{J}_{m_x, \rho}$ is an $N \times N$ pentadiagonal matrix describing how the x-momentum equation in every cell reacts to changes in density in neighboring cells.
+
+---
+
+## 3. Our `jac_prototype` Code
+Our code uses the **Stacked Layout** ($u = [\rho; m_x; m_y]$), we must explicitly build that $3 \times 3$ grid of sub-matrices using loop offsets:
+
+```julia
+row = row_var * ncells + cell 
+col = col_var * ncells + neighbor
+```
+
+*   `cell` and `neighbor` trace out the standard 5-banded pentadiagonal structure within an $N \times N$ space.
+*   `row_var * ncells` shifts the row index down into the correct equation block (e.g., row block 0 for $\rho$, block 1 for $m_x$).
+*   `col_var * ncells` shifts the column index right into the correct variable block (e.g., col block 0 for $\rho$, block 1 for $m_x$).
+
+**Summary:** Moving from 1 to 3 variables either **inflates the bands** to be 3-elements thick (Interleaved) or **duplicates the banded structure** into a $3 \times 3$ grid of identical sparsity patterns (Stacked).
+
 
 ## I/O / plotting
 
@@ -125,15 +166,15 @@ in the `prob` object returned.
 
 ## Where to look in the source
 
-- Implementation and function definitions: [relaxation_euler_2d.jl](relaxation_euler_2d.jl)
+- Implementation and function definitions: [relaxation_euler2d.jl](relaxation_euler2d.jl)
 - Top-level runner / defaults are in the same file; edit `build_problem` or
-  the call-site near the bottom of `relaxation_euler_2d.jl` to change grid
+  the call-site near the bottom of `relaxation_euler2d.jl` to change grid
   size, `eps`, or final time.
 
 ## Quick run (from repo root)
 
 ```bash
-julia --project=. relaxation_euler_2d.jl
+julia --project=. relaxation_euler2d.jl
 ```
 
 ## References
