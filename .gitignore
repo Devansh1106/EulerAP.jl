@@ -21,3 +21,4 @@ Manifest.toml
 # HPC outputs
 out_relaxation/
 err_relaxation/
+plots/

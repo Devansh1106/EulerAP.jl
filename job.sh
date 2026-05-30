@@ -10,7 +10,7 @@
 
 # 1. Load Modules
 # module purge
-# module load ohpc
+# # module load ohpc
 # module load gcc/13.3.0
 
 # module load openmpi/5.0.3
@@ -28,4 +28,3 @@ export JULIA_PROJECT=@.
 # Use srun so Slurm tracks the job; this runs the script in the current working directory
 # srun julia --sysimage EulerAP.so --project=. equations/relaxation_euler2d.jl
 srun julia --project=. equations/relaxation_euler2d.jl
-

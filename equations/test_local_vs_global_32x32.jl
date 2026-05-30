@@ -2,6 +2,14 @@ using EulerAP
 using LinearAlgebra
 # using BenchmarkTools
 
+function initial_condition(x, y)
+    r2 = (2x - 1)^2 + (2y - 1)^2
+    rho0 = 1 - 0.25 * exp(2 * (1 - r2))
+    ux0 = y * exp(1 - r2)
+    uy0 = -x * exp(1 - r2)
+    return rho0, rho0 * ux0, rho0 * uy0
+end
+
 println("=" ^ 70)
 println("Correctness Test: Local-AD vs Global-AD on 32×32 grid")
 println("=" ^ 70)
@@ -22,7 +30,8 @@ u0_test, x_test, y_test, p_test, jac_proto_test = build_problem(
     left_bc = left_bc_test,
     right_bc = right_bc_test,
     bottom_bc = bottom_bc_test,
-    top_bc = top_bc_test
+    top_bc = top_bc_test,
+    ic_func = initial_condition
 )
 
 println("\nProblem size: nx=$(p_test.nx), ny=$(p_test.ny)")
@@ -53,8 +62,7 @@ println("\nRunning solver with LOCAL-AD (assemble_global_jacobian)...")
     jac_proto_test;
     dt = p_test.dx,
     tol = 1e-8,
-    jacobian_builder = assemble_global_jacobian
-    ,
+    jacobian_builder! = assemble_global_jacobian!,
     flux = :rusanov
 )
 
