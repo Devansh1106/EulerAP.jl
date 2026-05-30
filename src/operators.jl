@@ -1,6 +1,7 @@
 function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
 
     flux = resolve_flux(flux)
+    bcfg = get_bc_config(p)
 
     ncells = p.nx * p.ny
 
@@ -16,21 +17,58 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
     fill!(dmx, 0.0)
     fill!(dmy, 0.0)
 
+    if !isa(bcfg.left, PeriodicBC)
+        for j in 1:p.ny
+            l = cell_index(1, j, p)
+            rho_r = rho[l]; mx_r = mx[l]; my_r = my[l]
+            rho_l, mx_l, my_l = get_boundary_state(0, j, p, u, t)
+
+            f1, f2, f3 = flux.flux_x(
+                rho_l, mx_l, my_l,
+                rho_r, mx_r, my_r,
+                p.eps
+            )
+            drho[l] += f1 / p.dx
+            dmx[l]  += f2 / p.dx
+            dmy[l]  += f3 / p.dx
+        end
+    end
+
+    if !isa(bcfg.bottom, PeriodicBC)
+        for i in 1:p.nx
+            b = cell_index(i, 1, p)
+
+            rho_t = rho[b]; mx_t = mx[b]; my_t = my[b]
+            rho_b, mx_b, my_b = get_boundary_state(i, 0, p, u, t)
+
+            f1, f2, f3 = flux.flux_y(
+                rho_b, mx_b, my_b,
+                rho_t, mx_t, my_t,
+                p.eps
+            )
+            drho[b] += f1 / p.dy
+            dmx[b]  += f2 / p.dy
+            dmy[b]  += f3 / p.dy
+        end
+    end
+
     for j in 1:p.ny
         for i in 1:p.nx
-
             # neighbor to the right; allow indices outside domain so BC handler
             # (`get_boundary_state`) can supply ghost values for non-periodic BCs
             i_right = i + 1
-
             l = cell_index(i, j, p)
 
             # left (interior) state
             rho_l = rho[l]; mx_l = mx[l]; my_l = my[l]
 
-            # right state: either interior (has index) or obtained from BCs
+            # right state: either interior/periodic (has index) or obtained from BCs
             if 1 <= i_right <= p.nx
                 r = cell_index(i_right, j, p)
+                rho_r = rho[r]; mx_r = mx[r]; my_r = my[r]
+                right_interior = true
+            elseif isa(get_bc_config(p).right, PeriodicBC)
+                r = cell_index(1, j, p)
                 rho_r = rho[r]; mx_r = mx[r]; my_r = my[r]
                 right_interior = true
             else
@@ -57,19 +95,20 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
     end
 
     for j in 1:p.ny
-
         # neighbor above; allow out-of-domain index so BCs can be applied
         j_top = j + 1
 
         for i in 1:p.nx
-
             b = cell_index(i, j, p)
-
             rho_b = rho[b]; mx_b = mx[b]; my_b = my[b]
 
             if 1 <= j_top <= p.ny
-                t = cell_index(i, j_top, p)
-                rho_t = rho[t]; mx_t = mx[t]; my_t = my[t]
+                top_cell = cell_index(i, j_top, p)
+                rho_t = rho[top_cell]; mx_t = mx[top_cell]; my_t = my[top_cell]
+                top_interior = true
+            elseif isa(get_bc_config(p).top, PeriodicBC)
+                top_cell = cell_index(i, 1, p)
+                rho_t = rho[top_cell]; mx_t = mx[top_cell]; my_t = my[top_cell]
                 top_interior = true
             else
                 rho_t, mx_t, my_t = get_boundary_state(i, j_top, p, u, t)
@@ -87,18 +126,20 @@ function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
             dmy[b]  -= f3 / p.dy
 
             if top_interior
-                drho[t] += f1 / p.dy
-                dmx[t]  += f2 / p.dy
-                dmy[t]  += f3 / p.dy
+                drho[top_cell] += f1 / p.dy
+                dmx[top_cell]  += f2 / p.dy
+                dmy[top_cell]  += f3 / p.dy
             end
         end
     end
-
+    # TODO: Make it more general so that if there is a source for \rho that can also be handled without any further changes to the core code.
+    # Relaxation source terms: rho has no source.
+    @. dmx -= mx / p.eps
+    @. dmy -= my / p.eps
     return nothing
 end
 
 function gather_local_state(u, i::Int, j::Int, p::RelaxationParams, t::Float64 = 0.0)
-
     ncells = p.nx * p.ny
     center = cell_index(i, j, p)
     # Use neighbor indices that may lie outside the domain boundary so that
@@ -126,7 +167,6 @@ function gather_local_state(u, i::Int, j::Int, p::RelaxationParams, t::Float64 =
 end
 
 function local_residual(local_u, p::RelaxationParams; flux = :rusanov)
-
     flux = resolve_flux(flux)
 
     # local_u layout: [center(1:3), left(4:6), right(7:9), bottom(10:12), top(13:15)]
@@ -169,5 +209,9 @@ function local_residual(local_u, p::RelaxationParams; flux = :rusanov)
     dmx  = -(f_right[2] - f_left[2]) / p.dx - (f_top[2] - f_bottom[2]) / p.dy
     dmy  = -(f_right[3] - f_left[3]) / p.dx - (f_top[3] - f_bottom[3]) / p.dy
 
+    # TODO: Make it more general so that if there is a source for \rho that can also be handled without any further changes to the core code.
+    # Relaxation source terms for the momentum equations. rho has no source.
+    dmx -= mx_c / p.eps
+    dmy -= my_c / p.eps
     return (drho, dmx, dmy)
 end

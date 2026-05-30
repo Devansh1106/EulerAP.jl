@@ -5,6 +5,10 @@
 
     ux_l = mx_l / rho_l
     ux_r = mx_r / rho_r
+    # rho_face = _safe_face_density(rho_l, rho_r)
+
+    # ux_l = mx_l / rho_face
+    # ux_r = mx_r / rho_face
 
     fx_l_1 = mx_l
     fx_l_2 = mx_l * ux_l + rho_l / eps
@@ -17,6 +21,8 @@
     c = sqrt(1 / eps)
 
     alpha = max(abs(ux_l) + c, abs(ux_r) + c)
+    # alpha = _smooth_max(_smooth_abs(ux_l, FLUX_REG) + c, _smooth_abs(ux_r, FLUX_REG) + c, FLUX_REG)
+
 
     f1 = 0.5 * (fx_l_1 + fx_r_1) - 0.5 * alpha * (rho_r - rho_l)
     f2 = 0.5 * (fx_l_2 + fx_r_2) - 0.5 * alpha * (mx_r - mx_l)
@@ -32,6 +38,10 @@ end
 
     uy_l = my_l / rho_l
     uy_r = my_r / rho_r
+    # rho_face = _safe_face_density(rho_l, rho_r)
+
+    # uy_l = my_l / rho_face
+    # uy_r = my_r / rho_face
 
     fy_l_1 = my_l
     fy_l_2 = mx_l * uy_l
@@ -44,6 +54,7 @@ end
     c = sqrt(1 / eps)
 
     alpha = max(abs(uy_l) + c, abs(uy_r) + c)
+    # alpha = _smooth_max(_smooth_abs(uy_l, FLUX_REG) + c, _smooth_abs(uy_r, FLUX_REG) + c, FLUX_REG)
 
     f1 = 0.5 * (fy_l_1 + fy_r_1) - 0.5 * alpha * (rho_r - rho_l)
     f2 = 0.5 * (fy_l_2 + fy_r_2) - 0.5 * alpha * (mx_r - mx_l)

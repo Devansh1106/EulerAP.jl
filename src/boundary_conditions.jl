@@ -1,5 +1,4 @@
 # Boundary Condition Infrastructure
-
 abstract type AbstractBC end
 
 struct PeriodicBC <: AbstractBC end
@@ -75,10 +74,34 @@ function apply_bc(bc::DirichletBC, state_val, x, y, t, p)
 end
 
 function apply_bc(bc::NeumannBC, state_val, x, y, t, p)
-    # Neumann: gradient specified, extrapolate from interior
-    # For now, simple first-order: ghost_val = interior_val + grad*dx
-    # This is a placeholder; proper implementation depends on context
-    return state_val
+    # Neumann: user provides normal derivative values via `bc.bc_func(x,y,t)`
+    # We perform a first-order extrapolation for the ghost cell:
+    #   ghost = interior + (d/dn)*delta
+    # where `delta` is the signed distance from the interior cell center to
+    # the ghost cell center (±dx or ±dy depending on the side).
+    grad = bc.bc_func(x, y, t)
+    # grad is expected to be a 3-tuple: (d_rho/dn, d_mx/dn, d_my/dn)
+    d_rho, d_mx, d_my = grad
+
+    # Determine signed delta based on which boundary location was passed
+    # (get_boundary_state passes x=p.xmin/p.xmax for left/right interior)
+    delta = 0.0
+    if isapprox(x, p.xmin; atol = 0)
+        delta = -p.dx
+    elseif isapprox(x, p.xmax; atol = 0)
+        delta = p.dx
+    elseif isapprox(y, p.ymin; atol = 0)
+        delta = -p.dy
+    elseif isapprox(y, p.ymax; atol = 0)
+        delta = p.dy
+    else
+        # Fallback: if we cannot determine side, assume zero change
+        delta = 0.0
+    end
+
+    return (state_val[1] + d_rho * delta,
+            state_val[2] + d_mx * delta,
+            state_val[3] + d_my * delta)
 end
 
 """
@@ -111,6 +134,9 @@ function which_side(i::Int, j::Int, p::RelaxationParams)
     on_top = (j == p.ny)
     
     # If on a corner, prioritize directions
+    # corners are on either left or right boundary
+    # here corners on left are considered on left boundary
+    # corners on right are considered on right boundary
     if on_left return :left
     elseif on_right return :right
     elseif on_bottom return :bottom
