@@ -4,144 +4,145 @@
 Assemble the finite-volume spatial operator and relaxation source terms into
 `du` for the stacked state vector `u`.
 """
+
 function implicit_part!(du, u, p::RelaxationParams, t; flux = :rusanov)
 
     flux = resolve_flux(flux)
     bcfg = get_bc_config(p)
-
     ncells = p.nx * p.ny
 
-    rho = @view u[1:ncells]
-    mx  = @view u[ncells + 1:2 * ncells]
-    my  = @view u[2 * ncells + 1:3 * ncells]
+    fill!(du, 0.0)
 
-    drho = @view du[1:ncells]
-    dmx  = @view du[ncells + 1:2 * ncells]
-    dmy  = @view du[2 * ncells + 1:3 * ncells]
-
-    fill!(drho, 0.0)
-    fill!(dmx, 0.0)
-    fill!(dmy, 0.0)
-
+    # --- Left Boundary ---
     if !isa(bcfg.left, PeriodicBC)
         for j in 1:p.ny
             l = cell_index(1, j, p)
-            rho_r = rho[l]; mx_r = mx[l]; my_r = my[l]
+            
+            rho_r = u[l]
+            mx_r  = u[ncells + l]
+            my_r  = u[2 * ncells + l]
+            
             rho_l, mx_l, my_l = get_boundary_state(0, j, p, u, t)
 
-            f1, f2, f3 = flux.flux_x(
-                rho_l, mx_l, my_l,
-                rho_r, mx_r, my_r,
-                p.eps
-            )
-            drho[l] += f1 / p.dx
-            dmx[l]  += f2 / p.dx
-            dmy[l]  += f3 / p.dx
+            f1, f2, f3 = flux.flux_x(rho_l, mx_l, my_l, rho_r, mx_r, my_r, p.eps)
+            
+            du[l]              += f1 / p.dx
+            du[ncells + l]     += f2 / p.dx
+            du[2 * ncells + l] += f3 / p.dx
         end
     end
 
+    # --- Bottom Boundary ---
     if !isa(bcfg.bottom, PeriodicBC)
         for i in 1:p.nx
             b = cell_index(i, 1, p)
 
-            rho_t = rho[b]; mx_t = mx[b]; my_t = my[b]
+            rho_t = u[b]
+            mx_t  = u[ncells + b]
+            my_t  = u[2 * ncells + b]
+            
             rho_b, mx_b, my_b = get_boundary_state(i, 0, p, u, t)
 
-            f1, f2, f3 = flux.flux_y(
-                rho_b, mx_b, my_b,
-                rho_t, mx_t, my_t,
-                p.eps
-            )
-            drho[b] += f1 / p.dy
-            dmx[b]  += f2 / p.dy
-            dmy[b]  += f3 / p.dy
+            f1, f2, f3 = flux.flux_y(rho_b, mx_b, my_b, rho_t, mx_t, my_t, p.eps)
+            
+            du[b]              += f1 / p.dy
+            du[ncells + b]     += f2 / p.dy
+            du[2 * ncells + b] += f3 / p.dy
         end
     end
 
+    # --- X-direction interior sweeps ---
     for j in 1:p.ny
         for i in 1:p.nx
-            # neighbor to the right; allow indices outside domain so BC handler
-            # (`get_boundary_state`) can supply ghost values for non-periodic BCs
             i_right = i + 1
             l = cell_index(i, j, p)
 
             # left (interior) state
-            rho_l = rho[l]; mx_l = mx[l]; my_l = my[l]
+            rho_l = u[l]
+            mx_l  = u[ncells + l]
+            my_l  = u[2 * ncells + l]
 
-            # right state: either interior/periodic (has index) or obtained from BCs
+            # right state
             if 1 <= i_right <= p.nx
                 r = cell_index(i_right, j, p)
-                rho_r = rho[r]; mx_r = mx[r]; my_r = my[r]
+                rho_r = u[r]
+                mx_r  = u[ncells + r]
+                my_r  = u[2 * ncells + r]
                 right_interior = true
             elseif isa(get_bc_config(p).right, PeriodicBC)
                 r = cell_index(1, j, p)
-                rho_r = rho[r]; mx_r = mx[r]; my_r = my[r]
+                rho_r = u[r]
+                mx_r  = u[ncells + r]
+                my_r  = u[2 * ncells + r]
                 right_interior = true
             else
                 rho_r, mx_r, my_r = get_boundary_state(i_right, j, p, u, t)
                 right_interior = false
             end
 
-            f1, f2, f3 = flux.flux_x(
-                rho_l, mx_l, my_l,
-                rho_r, mx_r, my_r,
-                p.eps
-            )
+            f1, f2, f3 = flux.flux_x(rho_l, mx_l, my_l, rho_r, mx_r, my_r, p.eps)
 
-            drho[l] -= f1 / p.dx
-            dmx[l]  -= f2 / p.dx
-            dmy[l]  -= f3 / p.dx
+            du[l]              -= f1 / p.dx
+            du[ncells + l]     -= f2 / p.dx
+            du[2 * ncells + l] -= f3 / p.dx
 
             if right_interior
-                drho[r] += f1 / p.dx
-                dmx[r]  += f2 / p.dx
-                dmy[r]  += f3 / p.dx
+                du[r]              += f1 / p.dx
+                du[ncells + r]     += f2 / p.dx
+                du[2 * ncells + r] += f3 / p.dx
             end
         end
     end
 
+    # --- Y-direction interior sweeps ---
     for j in 1:p.ny
-        # neighbor above; allow out-of-domain index so BCs can be applied
         j_top = j + 1
-
         for i in 1:p.nx
             b = cell_index(i, j, p)
-            rho_b = rho[b]; mx_b = mx[b]; my_b = my[b]
+            
+            # bottom (interior) state
+            rho_b = u[b]
+            mx_b  = u[ncells + b]
+            my_b  = u[2 * ncells + b]
 
+            # top state
             if 1 <= j_top <= p.ny
                 top_cell = cell_index(i, j_top, p)
-                rho_t = rho[top_cell]; mx_t = mx[top_cell]; my_t = my[top_cell]
+                rho_t = u[top_cell]
+                mx_t  = u[ncells + top_cell]
+                my_t  = u[2 * ncells + top_cell]
                 top_interior = true
             elseif isa(get_bc_config(p).top, PeriodicBC)
                 top_cell = cell_index(i, 1, p)
-                rho_t = rho[top_cell]; mx_t = mx[top_cell]; my_t = my[top_cell]
+                rho_t = u[top_cell]
+                mx_t  = u[ncells + top_cell]
+                my_t  = u[2 * ncells + top_cell]
                 top_interior = true
             else
                 rho_t, mx_t, my_t = get_boundary_state(i, j_top, p, u, t)
                 top_interior = false
             end
 
-            f1, f2, f3 = flux.flux_y(
-                rho_b, mx_b, my_b,
-                rho_t, mx_t, my_t,
-                p.eps
-            )
+            f1, f2, f3 = flux.flux_y(rho_b, mx_b, my_b, rho_t, mx_t, my_t, p.eps)
 
-            drho[b] -= f1 / p.dy
-            dmx[b]  -= f2 / p.dy
-            dmy[b]  -= f3 / p.dy
+            du[b]              -= f1 / p.dy
+            du[ncells + b]     -= f2 / p.dy
+            du[2 * ncells + b] -= f3 / p.dy
 
             if top_interior
-                drho[top_cell] += f1 / p.dy
-                dmx[top_cell]  += f2 / p.dy
-                dmy[top_cell]  += f3 / p.dy
+                du[top_cell]              += f1 / p.dy
+                du[ncells + top_cell]     += f2 / p.dy
+                du[2 * ncells + top_cell] += f3 / p.dy
             end
         end
     end
-    # TODO: Make it more general so that if there is a source for \rho that can also be handled without any further changes to the core code.
-    # Relaxation source terms: rho has no source.
-    @. dmx -= mx / p.eps
-    @. dmy -= my / p.eps
+    
+    # --- Source terms ---
+    for idx in 1:ncells
+        du[ncells + idx]     -= u[ncells + idx] / p.eps
+        du[2 * ncells + idx] -= u[2 * ncells + idx] / p.eps
+    end
+    
     return nothing
 end
 
@@ -227,6 +228,7 @@ function local_residual(local_u, p::RelaxationParams; flux = :rusanov)
     dmy  = -(f_right[3] - f_left[3]) / p.dx - (f_top[3] - f_bottom[3]) / p.dy
 
     # TODO: Make it more general so that if there is a source for \rho that can also be handled without any further changes to the core code.
+    
     # Relaxation source terms for the momentum equations. rho has no source.
     dmx -= mx_c / p.eps
     dmy -= my_c / p.eps

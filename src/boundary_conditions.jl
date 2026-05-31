@@ -37,11 +37,11 @@ end
 
 Configuration specifying boundary conditions on each side of the domain.
 """
-struct BCConfig
-    left::AbstractBC
-    right::AbstractBC
-    bottom::AbstractBC
-    top::AbstractBC
+struct BCConfig{L <:AbstractBC, R <:AbstractBC, B <:AbstractBC, T <:AbstractBC}
+    left::L
+    right::R
+    bottom::B
+    top::T
 end
 
 """
@@ -50,18 +50,18 @@ end
 Convenience constructor that accepts symbols and creates default periodic BCs.
 """
 function BCConfig(; # default values
-    left = :periodic,
-    right = :periodic,
-    bottom = :periodic,
-    top = :periodic,
-    bc_funcs = nothing
+    left     = :periodic,
+    right    = :periodic,
+    bottom   = :periodic,
+    top      = :periodic,
+    bc_funcs =  nothing
 )
     default_func = (x, y, t) -> (0.0, 0.0, 0.0)
     
-    left_bc = _parse_bc_spec(left, bc_funcs, :left, default_func)
-    right_bc = _parse_bc_spec(right, bc_funcs, :right, default_func)
+    left_bc   = _parse_bc_spec(left, bc_funcs, :left, default_func)
+    right_bc  = _parse_bc_spec(right, bc_funcs, :right, default_func)
     bottom_bc = _parse_bc_spec(bottom, bc_funcs, :bottom, default_func)
-    top_bc = _parse_bc_spec(top, bc_funcs, :top, default_func)
+    top_bc    = _parse_bc_spec(top, bc_funcs, :top, default_func)
     
     return BCConfig(left_bc, right_bc, bottom_bc, top_bc)
 end
@@ -69,12 +69,15 @@ end
 function _parse_bc_spec(spec, bc_funcs, side, default_func)
     if spec == :periodic
         return PeriodicBC()
+
     elseif spec == :dirichlet
         func = (bc_funcs !== nothing && haskey(bc_funcs, side)) ? bc_funcs[side] : default_func
         return DirichletBC(func)
+
     elseif spec == :neumann
         func = (bc_funcs !== nothing && haskey(bc_funcs, side)) ? bc_funcs[side] : default_func
         return NeumannBC(func)
+
     else
         error("Unknown BC type: $spec. Must be :periodic, :dirichlet, or :neumann")
     end
@@ -99,10 +102,11 @@ end
 function apply_bc(bc::NeumannBC, state_val, x, y, t, p)
     # Neumann: user provides normal derivative values via `bc.bc_func(x,y,t)`
     # We perform a first-order extrapolation for the ghost cell:
-    #   ghost = interior + (d/dn)*delta
+    #       ghost = interior + (d/dn)*delta
     # where `delta` is the signed distance from the interior cell center to
     # the ghost cell center (±dx or ±dy depending on the side).
     grad = bc.bc_func(x, y, t)
+
     # grad is expected to be a 3-tuple: (d_rho/dn, d_mx/dn, d_my/dn)
     d_rho, d_mx, d_my = grad
 
@@ -111,12 +115,16 @@ function apply_bc(bc::NeumannBC, state_val, x, y, t, p)
     delta = 0.0
     if isapprox(x, p.xmin; atol = 0)
         delta = -p.dx
+
     elseif isapprox(x, p.xmax; atol = 0)
         delta = p.dx
+
     elseif isapprox(y, p.ymin; atol = 0)
         delta = -p.dy
+
     elseif isapprox(y, p.ymax; atol = 0)
         delta = p.dy
+
     else
         # Fallback: if we cannot determine side, assume zero change
         delta = 0.0
@@ -139,9 +147,12 @@ get_bc_config(p) = p.bc_config
 end
 
 @inline function _state_at(u, i::Int, j::Int, p::RelaxationParams)
-    idx = cell_index(i, j, p)
-    ncells = p.nx * p.ny
-    return (u[idx], u[ncells + idx], u[2 * ncells + idx])
+    idx     = cell_index(i, j, p)
+    ncells  = p.nx * p.ny
+    
+    return (u[idx], 
+            u[ncells + idx], 
+            u[2 * ncells + idx])
 end
 
 """
@@ -151,19 +162,19 @@ Determine which boundary side a cell index (i,j) is on, if any.
 Returns :left, :right, :bottom, :top, or nothing if interior. Corners are also taken care here.
 """
 function which_side(i::Int, j::Int, p::RelaxationParams)
-    on_left = (i == 1)
-    on_right = (i == p.nx)
+    on_left   = (i == 1)
+    on_right  = (i == p.nx)
     on_bottom = (j == 1)
-    on_top = (j == p.ny)
+    on_top    = (j == p.ny)
     
     # If on a corner, prioritize directions
     # corners are on either left or right boundary
     # here corners on left are considered on left boundary
     # corners on right are considered on right boundary
-    if on_left return :left
-    elseif on_right return :right
+    if     on_left   return :left
+    elseif on_right  return :right
     elseif on_bottom return :bottom
-    elseif on_top return :top
+    elseif on_top    return :top
     else return nothing
     end
 end
@@ -178,7 +189,8 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
     bcfg = get_bc_config(p)
     
     # Interior cell - return normally
-    if 1 <= neighbor_i <= p.nx && 1 <= neighbor_j <= p.ny
+    if 1 <= neighbor_i <= p.nx && 
+       1 <= neighbor_j <= p.ny
         return _state_at(u, neighbor_i, neighbor_j, p)
     end
     
@@ -195,10 +207,12 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
         if interior_j < 1 || interior_j > p.ny # if it's a ghost cell in j
             interior_j = clamp(neighbor_j, 1, p.ny)  # clamp if needed (do not wrap it)
         end
-        x_interior = p.xmin
+
+        x_interior     = p.xmin
         interior_state = _state_at(u, interior_i, interior_j, p)
-        y_val = p.ymin + (interior_j - 0.5) * p.dy
-        bc_state = apply_bc(bcfg.left, interior_state, x_interior, y_val, t, p)
+        y_val          = p.ymin + (interior_j - 0.5) * p.dy
+        bc_state       = apply_bc(bcfg.left, interior_state, x_interior, y_val, t, p)
+
         return bc_state
         
     elseif neighbor_i > p.nx  # Right ghost cell
@@ -211,10 +225,11 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
         if interior_j < 1 || interior_j > p.ny
             interior_j = clamp(neighbor_j, 1, p.ny)
         end
-        x_interior = p.xmax
+        x_interior     = p.xmax
         interior_state = _state_at(u, interior_i, interior_j, p)
-        y_val = p.ymin + (interior_j - 0.5) * p.dy
-        bc_state = apply_bc(bcfg.right, interior_state, x_interior, y_val, t, p)
+        y_val          = p.ymin + (interior_j - 0.5) * p.dy
+        bc_state       = apply_bc(bcfg.right, interior_state, x_interior, y_val, t, p)
+
         return bc_state
         
     elseif neighbor_j < 1  # Bottom ghost cell
@@ -227,10 +242,11 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
         if interior_i < 1 || interior_i > p.nx
             interior_i = clamp(neighbor_i, 1, p.nx)
         end
-        y_interior = p.ymin
+        y_interior     = p.ymin
         interior_state = _state_at(u, interior_i, interior_j, p)
-        x_val = p.xmin + (interior_i - 0.5) * p.dx
-        bc_state = apply_bc(bcfg.bottom, interior_state, x_val, y_interior, t, p)
+        x_val          = p.xmin + (interior_i - 0.5) * p.dx
+        bc_state       = apply_bc(bcfg.bottom, interior_state, x_val, y_interior, t, p)
+
         return bc_state
         
     elseif neighbor_j > p.ny  # Top ghost cell
@@ -243,10 +259,11 @@ function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParam
         if interior_i < 1 || interior_i > p.nx
             interior_i = clamp(neighbor_i, 1, p.nx)
         end
-        y_interior = p.ymax
+        y_interior     = p.ymax
         interior_state = _state_at(u, interior_i, interior_j, p)
-        x_val = p.xmin + (interior_i - 0.5) * p.dx
-        bc_state = apply_bc(bcfg.top, interior_state, x_val, y_interior, t, p)
+        x_val          = p.xmin + (interior_i - 0.5) * p.dx
+        bc_state       = apply_bc(bcfg.top, interior_state, x_val, y_interior, t, p)
+        
         return bc_state
     end
     

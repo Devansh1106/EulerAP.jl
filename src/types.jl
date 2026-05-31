@@ -15,7 +15,7 @@ end
 
 Model and grid parameters for the 2D relaxation-Euler problem.
 """
-struct RelaxationParams
+struct RelaxationParams{BC}
     eps::Float64
     nx::Int
     ny::Int
@@ -25,7 +25,7 @@ struct RelaxationParams
     xmax::Float64
     ymin::Float64
     ymax::Float64
-    bc_config::Any  # BCConfig (defined in boundary_conditions.jl)
+    bc_config::BC  # BCConfig (defined in boundary_conditions.jl)
 end
 
 @inline function cell_index(i, j, p::RelaxationParams)
@@ -38,12 +38,12 @@ end
 Mutable container passed through the nonlinear solver for one backward-Euler
 step.
 """
-mutable struct ImplicitStepData
-    model::RelaxationParams
+mutable struct ImplicitStepData{M, F}
+    model::M
     dt::Float64
     t::Float64
     u_prev::Vector{Float64}
-    flux::FluxPair
+    flux::F
 end
 
 """
