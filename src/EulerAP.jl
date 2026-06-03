@@ -4,6 +4,7 @@ using ForwardDiff
 using NonlinearSolve
 using SparseArrays
 using LinearSolve
+using Pardiso
 
 export RelaxationParams
 export FluxPair

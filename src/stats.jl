@@ -24,6 +24,11 @@ function print_run_stats(label, stats::RunStats, nsteps_done::Int, model::Union{
         println("  grid resolution = ", model.nx, " x ", model.ny)
     end
 
+    n_threads = get(ENV, "MKL_NUM_THREADS", string(Threads.nthreads()))
+
+    println(
+        "  total threads = ", n_threads)
+
     println(
         "  total wall time = ",
         round(stats.total_time; digits = 6),

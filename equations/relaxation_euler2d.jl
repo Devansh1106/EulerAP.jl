@@ -1,7 +1,7 @@
 using EulerAP
 using Plots
 
-tspan = (0.0, 2.0)
+tspan = (0.0, 8.0)
 tol = 1e-8
 
 # Boundary condition choices: :periodic, :dirichlet, :neumann
@@ -92,8 +92,8 @@ bc_funcs = Dict(
 # end
 
 u0, x, y, p, jac_cache = build_problem(
-    nx = 128,
-    ny = 128,
+    nx = 512,
+    ny = 512,
     eps = 0.05,
     left_bc = left_bc,
     right_bc = right_bc,
@@ -136,7 +136,7 @@ rho_grid = reshape(rho_final, p.nx, p.ny)
 ux_grid  = reshape(ux_final, p.nx, p.ny)
 uy_grid  = reshape(uy_final, p.nx, p.ny)
 
-println("Solved 2D relaxation Euler system")
+println("Solved 2D relaxation Euler system (MKL)")
 println("Final time = ", tspan[2])
 
 println("Mean density = ", sum(rho_final) / ncells)
@@ -144,6 +144,7 @@ println("Mean ux = ", sum(ux_final) / ncells)
 println("Mean uy = ", sum(uy_final) / ncells)
 
 print_run_stats("Solve", solve_stats, nsteps_done, p)
+n_threads = get(ENV, "MKL_NUM_THREADS", string(Threads.nthreads()))
 
 rho_plot = heatmap(
     x,
@@ -155,7 +156,7 @@ rho_plot = heatmap(
     aspect_ratio = :equal
 )
 
-savefig(rho_plot, "plots/rho_final_2d.png")
+savefig(rho_plot, "plots/rho_final_2d_$(p.nx)_$(n_threads).png")
 
 # # Extract a 1D slice along the middle of the y-axis
 # mid_y_index = div(p.ny, 2)
@@ -172,7 +173,7 @@ savefig(rho_plot, "plots/rho_final_2d.png")
 #     legend = false
 # )
 
-# savefig(rho_1d_plot, "plots/rho_1d_profile.png")
+# savefig(rho_1d_plot, "plots/rho_1d_profile_$(p.nx).png")
 # println("Saved rho_1d_profile.png")
 
 ux_plot = heatmap(
@@ -185,7 +186,7 @@ ux_plot = heatmap(
     aspect_ratio = :equal
 )
 
-savefig(ux_plot, "plots/ux_final_2d.png")
+savefig(ux_plot, "plots/ux_final_2d_$(p.nx)_$(n_threads).png")
 
 uy_plot = heatmap(
     x,
@@ -197,7 +198,7 @@ uy_plot = heatmap(
     aspect_ratio = :equal
 )
 
-savefig(uy_plot, "plots/uy_final_2d.png")
+savefig(uy_plot, "plots/uy_final_2d_$(p.nx)_$(n_threads).png")
 
 println("Saved rho_final_2d.png")
 println("Saved ux_final_2d.png")

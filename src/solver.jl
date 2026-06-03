@@ -1,4 +1,5 @@
-const linsolve = KLUFactorization()
+# const linsolve = KLUFactorization()
+const linsolve = MKLPardisoFactorize()
 
 """
     backward_euler_residual!(res, u, p::ImplicitStepData)
@@ -89,7 +90,7 @@ function solve_backward_euler(
 
         step_timed = @timed begin
             reinit!(cache; u0 = u, p = step_data) # in-place (no allocation)
-            nonlinear_solution = solve!(cache)
+            nonlinear_solution = SciMLBase.solve!(cache)
             if !SciMLBase.successful_retcode(nonlinear_solution.retcode)
                 error(
                     "Backward Euler nonlinear solve failed at step $nsteps_done, " *
