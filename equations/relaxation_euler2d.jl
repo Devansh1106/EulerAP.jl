@@ -1,8 +1,9 @@
 using EulerAP
 using Plots
 
-tspan = (0.0, 8.0)
+tspan = (0.0, 0.01)
 tol = 1e-8
+gamma = 1.4
 
 # Boundary condition choices: :periodic, :dirichlet, :neumann
 # Set per-side BCs here 
@@ -62,8 +63,8 @@ end
 # Velocity: zero everywhere
 const rho_L = 1.0
 # Set rho_R to one of {0.5, 0.1, 0.025} for different test cases
-const rho_R = 0.025
-const x_m = 0.8
+const rho_R = 0.5
+const x_m = 0.5
 
 function initial_condition_riemann(x, y)
     rho0 = x <= x_m ? rho_L : rho_R
@@ -71,7 +72,7 @@ function initial_condition_riemann(x, y)
 end
 
 function bc_match_ic(x, y, t)
-    return initial_condition_smooth(x,y)
+    return initial_condition_riemann(x,y)
 end
 
 bc_funcs = Dict(
@@ -91,26 +92,52 @@ bc_funcs = Dict(
 #     return rho0, rho0 * ux0, rho0 * uy0
 # end
 
+# # warm-up run for julia
+# u0, x, y, p, jac_cache = build_problem(
+#     nx = 8,
+#     ny = 8,
+#     eps = 1e-3,
+#     left_bc = left_bc,
+#     right_bc = right_bc,
+#     bottom_bc = bottom_bc,
+#     top_bc = top_bc,
+#     bc_funcs = bc_funcs,
+#     ic_func = initial_condition_riemann,
+#     flux = :rusanov,
+#     gamma = gamma,
+#     # xmin = -10.0,
+#     # xmax = 10.0,
+#     # ymin = -10.0,
+#     # ymax = 10.0
+#     xmin = 0.0,
+#     xmax = 1.0,
+#     ymin = 0.0,
+#     ymax = 1.0
+# )
+
 u0, x, y, p, jac_cache = build_problem(
     nx = 512,
     ny = 512,
-    eps = 0.05,
+    eps = 1e-3,
     left_bc = left_bc,
     right_bc = right_bc,
     bottom_bc = bottom_bc,
     top_bc = top_bc,
     bc_funcs = bc_funcs,
-    ic_func = initial_condition_smooth,
+    ic_func = initial_condition_riemann,
     flux = :rusanov,
-    xmin = -10.0,
-    xmax = 10.0,
-    ymin = -10.0,
-    ymax = 10.0
-    # xmin = 0.0,
-    # xmax = 1.6,
-    # ymin = 0.0,
-    # ymax = 0.1
+    gamma = gamma,
+    # xmin = -10.0,
+    # xmax = 10.0,
+    # ymin = -10.0,
+    # ymax = 10.0
+    xmin = 0.0,
+    xmax = 1.0,
+    ymin = 0.0,
+    ymax = 1.0
 )
+
+u_init = copy(u0)
 
 u_final, solve_stats, nsteps_done =
     solve_backward_euler(
@@ -118,88 +145,33 @@ u_final, solve_stats, nsteps_done =
         p,
         tspan,
         jac_cache;
-        dt = p.dx,
+        dt = minimum(p.dx),
         tol = tol,
-        flux = :rusanov
+        flux = :rusanov,
+        gamma = gamma
     )
 
-ncells = p.nx * p.ny
-
-rho_final = @view u_final[1:ncells]
-mx_final  = @view u_final[ncells + 1:2 * ncells]
-my_final  = @view u_final[2 * ncells + 1:3 * ncells]
-
-ux_final = mx_final ./ rho_final
-uy_final = my_final ./ rho_final
-
-rho_grid = reshape(rho_final, p.nx, p.ny)
-ux_grid  = reshape(ux_final, p.nx, p.ny)
-uy_grid  = reshape(uy_final, p.nx, p.ny)
+_ncells = p.nx * p.ny
 
 println("Solved 2D relaxation Euler system (MKL)")
 println("Final time = ", tspan[2])
 
-println("Mean density = ", sum(rho_final) / ncells)
-println("Mean ux = ", sum(ux_final) / ncells)
-println("Mean uy = ", sum(uy_final) / ncells)
+rho_final = @view u_final[1:_ncells]
+mx_final  = @view u_final[_ncells + 1:2 * _ncells]
+my_final  = @view u_final[2 * _ncells + 1:3 * _ncells]
+ux_final  = mx_final ./ rho_final
+uy_final  = my_final ./ rho_final
 
-print_run_stats("Solve", solve_stats, nsteps_done, p)
+println("Mean density = ", sum(rho_final) / _ncells)
+println("Mean ux = ", sum(ux_final) / _ncells)
+println("Mean uy = ", sum(uy_final) / _ncells)
+
+print_run_stats("Solve", solve_stats, nsteps_done, p; gamma = gamma)
 n_threads = get(ENV, "MKL_NUM_THREADS", string(Threads.nthreads()))
 
-rho_plot = heatmap(
-    x,
-    y,
-    permutedims(rho_grid);
-    xlabel = "x",
-    ylabel = "y",
-    title = "Final density rho",
-    aspect_ratio = :equal
-)
+sol = sol2D(x, y, u_init, u_final, _ncells)
+figures = plot(sol, size=(1400, 450), plot_title="2D sol $(p.size) & $(p.eps)")
 
-savefig(rho_plot, "plots/rho_final_2d_$(p.nx)_$(n_threads).png")
-
-# # Extract a 1D slice along the middle of the y-axis
-# mid_y_index = div(p.ny, 2)
-# rho_1d = rho_grid[:, mid_y_index]
-
-# # Create a standard line plot
-# rho_1d_plot = plot(
-#     x, 
-#     rho_1d;
-#     xlabel = "x",
-#     ylabel = "Density (rho)",
-#     title = "1D Density Profile at t = $(tspan[2])",
-#     linewidth = 2,
-#     legend = false
-# )
-
-# savefig(rho_1d_plot, "plots/rho_1d_profile_$(p.nx).png")
-# println("Saved rho_1d_profile.png")
-
-ux_plot = heatmap(
-    x,
-    y,
-    permutedims(ux_grid);
-    xlabel = "x",
-    ylabel = "y",
-    title = "Final velocity ux",
-    aspect_ratio = :equal
-)
-
-savefig(ux_plot, "plots/ux_final_2d_$(p.nx)_$(n_threads).png")
-
-uy_plot = heatmap(
-    x,
-    y,
-    permutedims(uy_grid);
-    xlabel = "x",
-    ylabel = "y",
-    title = "Final velocity uy",
-    aspect_ratio = :equal
-)
-
-savefig(uy_plot, "plots/uy_final_2d_$(p.nx)_$(n_threads).png")
-
-println("Saved rho_final_2d.png")
-println("Saved ux_final_2d.png")
-println("Saved uy_final_2d.png")
+mkpath("plots") 
+savefig(figures, "plots/sol_$(p.nx).png")
+println("Solution is saved in plots/sol2D_$(p.nx).png")

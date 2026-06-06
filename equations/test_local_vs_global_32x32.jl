@@ -15,6 +15,7 @@ println("Correctness Test: Local-AD vs Global-AD on 32×32 grid")
 println("=" ^ 70)
 
 tspan = (0.0, 0.01)  # short run for testing
+gamma = 1.4
 
 # Build problem with 32x32 grid
 # Boundary condition knobs for the test (change as needed)
@@ -31,7 +32,8 @@ u0_test, x_test, y_test, p_test, jac_proto_test = build_problem(
     right_bc = right_bc_test,
     bottom_bc = bottom_bc_test,
     top_bc = top_bc_test,
-    ic_func = initial_condition
+    ic_func = initial_condition,
+    gamma = gamma
 )
 
 println("\nProblem size: nx=$(p_test.nx), ny=$(p_test.ny)")
@@ -46,9 +48,10 @@ println("Running solver with GLOBAL AD (AutoForwardDiff)...")
     p_test,
     tspan,
     jac_proto_test;
-    dt = p_test.dx,
+    dt = minimum(p_test.dx),
     tol = 1e-8,
-    flux = :rusanov
+    flux = :rusanov,
+    gamma = gamma
 )
 
 print_run_stats("Global-AD", stats_global, steps_global)
@@ -60,10 +63,11 @@ println("\nRunning solver with LOCAL-AD (assemble_global_jacobian)...")
     p_test,
     tspan,
     jac_proto_test;
-    dt = p_test.dx,
+    dt = minimum(p_test.dx),
     tol = 1e-8,
     jacobian_builder! = assemble_global_jacobian!,
-    flux = :rusanov
+    flux = :rusanov,
+    gamma = gamma
 )
 
 print_run_stats("Local-AD", stats_local, steps_local)
