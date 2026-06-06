@@ -18,6 +18,7 @@ docs/build/
 
 # VSCode
 .vscode/
+.DS_Store
 
 # HPC outputs
 out_relaxation/
