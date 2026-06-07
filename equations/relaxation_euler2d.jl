@@ -4,6 +4,8 @@ using Plots
 tspan = (0.0, 0.01)
 tol = 1e-8
 gamma = 1.4
+eps = 1e-3
+
 
 # Boundary condition choices: :periodic, :dirichlet, :neumann
 # Set per-side BCs here 
@@ -64,7 +66,7 @@ end
 const rho_L = 1.0
 # Set rho_R to one of {0.5, 0.1, 0.025} for different test cases
 const rho_R = 0.5
-const x_m = 0.5
+const x_m   = 0.5
 
 function initial_condition_riemann(x, y)
     rho0 = x <= x_m ? rho_L : rho_R
@@ -76,10 +78,10 @@ function bc_match_ic(x, y, t)
 end
 
 bc_funcs = Dict(
-    :left => bc_match_ic,
-    :right => bc_match_ic,
+    :left   => bc_match_ic,
+    :right  => bc_match_ic,
     :bottom => bc_match_ic,
-    :top => bc_match_ic
+    :top    => bc_match_ic
 )
 
 # Radial initial condition
@@ -118,7 +120,7 @@ bc_funcs = Dict(
 u0, x, y, p, jac_cache = build_problem(
     nx = 512,
     ny = 512,
-    eps = 1e-3,
+    eps = eps,
     left_bc = left_bc,
     right_bc = right_bc,
     bottom_bc = bottom_bc,
@@ -163,15 +165,27 @@ ux_final  = mx_final ./ rho_final
 uy_final  = my_final ./ rho_final
 
 println("Mean density = ", sum(rho_final) / _ncells)
-println("Mean ux = ", sum(ux_final) / _ncells)
-println("Mean uy = ", sum(uy_final) / _ncells)
+println("Mean ux      = ", sum(ux_final) / _ncells)
+println("Mean uy      = ", sum(uy_final) / _ncells)
 
-print_run_stats("Solve", solve_stats, nsteps_done, p; gamma = gamma)
+print_run_stats("Solve", 
+                solve_stats, 
+                nsteps_done, 
+                p; 
+                gamma = gamma)
+
 n_threads = get(ENV, "MKL_NUM_THREADS", string(Threads.nthreads()))
 
-sol = sol2D(x, y, u_init, u_final, _ncells)
-figures = plot(sol, size=(1400, 450), plot_title="2D sol $(p.size) & $(p.eps)")
+sol = sol2D(x, 
+            y, 
+            u_init, 
+            u_final, 
+            _ncells)
+
+figures = plot(sol, 
+               size=(1400, 450), 
+               plot_title="2D sol $(p.size) & $(p.eps)")
 
 mkpath("plots") 
-savefig(figures, "plots/sol_$(p.nx).png")
+savefig(figures, "plots/sol2D_$(p.nx).png")
 println("Solution is saved in plots/sol2D_$(p.nx).png")
