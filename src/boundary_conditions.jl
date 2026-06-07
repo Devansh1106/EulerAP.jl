@@ -1,3 +1,5 @@
+using StaticArrays
+
 """
     AbstractBC
 
@@ -19,7 +21,7 @@ Dirichlet boundary condition defined by a user function `f(x, y, t)` that
 returns `(rho, mx, my)`.
 """
 struct DirichletBC{F} <: AbstractBC
-    bc_func::F  # (x, y, t) -> (rho, mx, my)
+    bc_func::F
 end
 
 """
@@ -29,7 +31,7 @@ Neumann boundary condition defined by a user function `f(x, y, t)` returning
 the normal derivatives `(d_rho/dn, d_mx/dn, d_my/dn)`.
 """
 struct NeumannBC{F} <: AbstractBC
-    bc_func::F  # (x, y, t) -> (rho, mx, my) - gradient values
+    bc_func::F
 end
 
 """
@@ -45,9 +47,38 @@ struct BCConfig{L <:AbstractBC, R <:AbstractBC, B <:AbstractBC, T <:AbstractBC}
 end
 
 """
-    BCConfig(; left=:periodic, right=:periodic, bottom=:periodic, top=:periodic)
+    BCConfig(; left=:periodic, right=:periodic, bottom=:periodic, top=:periodic, bc_funcs=nothing)
 
-Convenience constructor that accepts symbols and creates default periodic BCs.
+Outer constructor for the `BCConfig` struct that parses and stores boundary condition 
+specifications for a 2D computational domain.
+
+This function processes boundary identifiers (symbols, strings, or tuple-wrapped functions) 
+and instantiates concrete, type-stable boundary condition types (`PeriodicBC`, `DirichletBC`, 
+`NeumannBC`) for each spatial grid boundary.
+
+# Boundary Representation Layout
+- `left`: Coordinate boundary at \$x = x_{\\text{min}}\$ (Axis 1, Sign -1)
+- `right`: Coordinate boundary at \$x = x_{\\text{max}}\$ (Axis 1, Sign +1)
+- `bottom`: Coordinate boundary at \$y = y_{\\text{min}}\$ (Axis 2, Sign -1)
+- `top`: Coordinate boundary at \$y = y_{\\text{max}}\$ (Axis 2, Sign +1)
+
+# Default State Vector Evaluation
+If numerical boundary types (Dirichlet or Neumann) are selected but no coordinate function 
+is supplied via `bc_funcs`, a zero-fallback function `(x, y, t) -> (0.0, 0.0, 0.0)` is assigned. 
+This function returns a zero vector corresponding to the three state variables 
+([\$\\rho, m_x, m_y\$]).
+
+# Keyword Arguments
+- `left`: Boundary type for the left wall (defaults to `:periodic`).
+- `right`: Boundary type for the right wall (defaults to `:periodic`).
+- `bottom`: Boundary type for the bottom wall (defaults to `:periodic`).
+- `top`: Boundary type for the top wall (defaults to `:periodic`).
+- `bc_funcs::Union{Nothing, NamedTuple}`: Named tuple mapping boundary keys to space-time 
+  coordinate functions `f(x, y, t)` that return state vectors or normal derivatives.
+
+# Returns
+- `BCConfig`: A structural container holding the concrete boundary sub-types for dispatch 
+  inside spatial flux routines.
 """
 function BCConfig(; # default values
     left     = :periodic,
@@ -66,16 +97,28 @@ function BCConfig(; # default values
     return BCConfig(left_bc, right_bc, bottom_bc, top_bc)
 end
 
-function _parse_bc_spec(spec, bc_funcs, side, default_func)
+function _parse_bc_spec(spec::Symbol, 
+                        bc_funcs::Union{Nothing, AbstractDict}, 
+                        side::Symbol, 
+                        default_func::Function)
+
     if spec == :periodic
         return PeriodicBC()
 
     elseif spec == :dirichlet
-        func = (bc_funcs !== nothing && haskey(bc_funcs, side)) ? bc_funcs[side] : default_func
+        func = (bc_funcs !== nothing && 
+                haskey(bc_funcs, side)) ? 
+                bc_funcs[side] : 
+                default_func
+                
         return DirichletBC(func)
 
     elseif spec == :neumann
-        func = (bc_funcs !== nothing && haskey(bc_funcs, side)) ? bc_funcs[side] : default_func
+        func = (bc_funcs !== nothing && 
+                haskey(bc_funcs, side)) ? 
+                bc_funcs[side] : 
+                default_func
+
         return NeumannBC(func)
 
     else
@@ -88,51 +131,56 @@ end
 
 Apply a boundary condition to get the value at a boundary ghost cell.
 """
-function apply_bc(bc::PeriodicBC, state_val, x, y, t, p)
+
+function apply_bc(bc::PeriodicBC, 
+                  state_val::AbstractVector, 
+                  x::Real, 
+                  y::Real, 
+                  t::Real, 
+                  p::RelaxationParams)
+
     # Periodic wrapping is handled by the ghost-cell lookup.
-    # This fallback keeps the interior state unchanged.
+    # This fallback keeps the interior state unchanged (identity function).
     return state_val
 end
 
-function apply_bc(bc::DirichletBC, state_val, x, y, t, p)
-    # Dirichlet: enforce the BC function value at the boundary
-    return bc.bc_func(x, y, t)
+# identity function
+function apply_bc(bc::PeriodicBC, 
+                  state_val::AbstractVector, 
+                  coords::Tuple, 
+                  t::Real, 
+                  p::RelaxationParams, 
+                  axis::Int)
+
+    return state_val
 end
 
-function apply_bc(bc::NeumannBC, state_val, x, y, t, p)
-    # Neumann: user provides normal derivative values via `bc.bc_func(x,y,t)`
-    # We perform a first-order extrapolation for the ghost cell:
-    #       ghost = interior + (d/dn)*delta
-    # where `delta` is the signed distance from the interior cell center to
-    # the ghost cell center (±dx or ±dy depending on the side).
-    grad = bc.bc_func(x, y, t)
+function apply_bc(bc::DirichletBC, 
+                  state_val::AbstractVector, 
+                  coords::Tuple, 
+                  t::Real, 
+                  p::RelaxationParams, 
+                  axis::Int)
 
-    # grad is expected to be a 3-tuple: (d_rho/dn, d_mx/dn, d_my/dn)
-    d_rho, d_mx, d_my = grad
+    # Explicitly casting ensures Dual numbers for Auto-Diff stay intact
+    return SVector{length(state_val), eltype(state_val)}(bc.bc_func(coords..., t))
+end
 
-    # Determine signed delta based on which boundary location was passed
-    # (get_boundary_state passes x=p.xmin/p.xmax for left/right interior)
-    delta = 0.0
-    if isapprox(x, p.xmin; atol = 0)
-        delta = -p.dx
-
-    elseif isapprox(x, p.xmax; atol = 0)
-        delta = p.dx
-
-    elseif isapprox(y, p.ymin; atol = 0)
-        delta = -p.dy
-
-    elseif isapprox(y, p.ymax; atol = 0)
-        delta = p.dy
-
-    else
-        # Fallback: if we cannot determine side, assume zero change
-        delta = 0.0
+# Needs normal derivative from bc_func()
+function apply_bc(bc::NeumannBC, 
+                  state_val::AbstractVector, 
+                  coords::Tuple, 
+                  t::Real, 
+                  p::RelaxationParams, 
+                  axis::Int)
+                  
+    grad  = bc.bc_func(coords..., t)
+    delta = p.dx[axis]
+    let M = length(state_val), T = eltype(state_val)
+        return SVector{M, T}(ntuple(i -> 
+                             state_val[i] + grad[i] * delta, 
+                             M))
     end
-
-    return (state_val[1] + d_rho * delta,
-            state_val[2] + d_mx * delta,
-            state_val[3] + d_my * delta)
 end
 
 """
@@ -140,43 +188,69 @@ end
 
 Retrieve BC configuration from RelaxationParams.
 """
-get_bc_config(p) = p.bc_config
+get_bc_config(p::RelaxationParams) = p.bc_config
+
+@inline function _side_bc(bcfg::BCConfig, axis::Int, sign::Int)
+    if axis == 1
+        return sign < 0 ? bcfg.left : bcfg.right
+
+    elseif axis == 2
+        return sign < 0 ? bcfg.bottom : bcfg.top
+
+    else
+        error("Boundary conditions are only defined for the first two axes in this model")
+    end
+end
 
 @inline function _wrap_index(idx::Int, n::Int)
     return mod(idx - 1, n) + 1
 end
 
-@inline function _state_at(u, i::Int, j::Int, p::RelaxationParams)
-    idx     = cell_index(i, j, p)
-    ncells  = p.nx * p.ny
-    
-    return (u[idx], 
-            u[ncells + idx], 
-            u[2 * ncells + idx])
+@inline function _state_at(u::AbstractVector, 
+                           I::CartesianIndex{NDIMS}, 
+                           p::RelaxationParams{NDIMS}) where {NDIMS}
+
+    idx = cell_index(I, p)
+    nc  = ncells(p)
+    return SVector{NDIMS + 1}(ntuple(v -> 
+                              u[(v - 1) * nc + idx], 
+                              NDIMS + 1))
 end
 
 """
-    which_side(i::Int, j::Int, p::RelaxationParams) -> Union{Symbol, Nothing}
+    boundary_sides(I::CartesianIndex, p::RelaxationParams)
 
-Determine which boundary side a cell index (i,j) is on, if any.
-Returns :left, :right, :bottom, :top, or nothing if interior. Corners are also taken care here.
+Return all domain sides touched by `I`. This keeps corner cells from
+collapsing to only the first out-of-bounds axis.
 """
-function which_side(i::Int, j::Int, p::RelaxationParams)
-    on_left   = (i == 1)
-    on_right  = (i == p.nx)
-    on_bottom = (j == 1)
-    on_top    = (j == p.ny)
-    
-    # If on a corner, prioritize directions
-    # corners are on either left or right boundary
-    # here corners on left are considered on left boundary
-    # corners on right are considered on right boundary
-    if     on_left   return :left
-    elseif on_right  return :right
-    elseif on_bottom return :bottom
-    elseif on_top    return :top
-    else return nothing
+function boundary_sides(I::CartesianIndex{NDIMS}, 
+                        p::RelaxationParams{NDIMS}) where {NDIMS}
+
+    coords = Tuple(I)
+    sides  = Symbol[]
+
+    for axis in 1:NDIMS
+        if coords[axis] < 1
+            push!(sides, axis == 1 ? :left : :bottom)
+        elseif coords[axis] > p.size[axis]
+            push!(sides, axis == 1 ? :right : :top)
+        end
     end
+
+    return Tuple(sides)
+end
+
+"""
+    which_side(I::CartesianIndex, p::RelaxationParams) -> Union{Symbol, Nothing}
+
+Return the first boundary side touched by `I`, or `nothing` if `I` is
+interior. Use `boundary_sides` when corner awareness is required.
+"""
+function which_side(I::CartesianIndex{NDIMS}, 
+                    p::RelaxationParams{NDIMS}) where {NDIMS}
+
+    sides = boundary_sides(I, p)
+    return isempty(sides) ? nothing : sides[1]
 end
 
 """
@@ -184,88 +258,137 @@ end
 
 Get the state at a neighbor cell, applying BCs if it's a ghost cell outside the domain.
 """
-function get_boundary_state(neighbor_i::Int, neighbor_j::Int, p::RelaxationParams, u, t::Float64)
-    
-    bcfg = get_bc_config(p)
-    
-    # Interior cell - return normally
-    if 1 <= neighbor_i <= p.nx && 
-       1 <= neighbor_j <= p.ny
-        return _state_at(u, neighbor_i, neighbor_j, p)
+@inline function get_boundary_state(I::CartesianIndex{NDIMS}, 
+                                    p::RelaxationParams{NDIMS}, 
+                                    u::AbstractVector, 
+                                    t::Real) where {NDIMS}
+                                    
+    coords = Tuple(I)
+
+    # Finds the number of out-of-bounds (ghost) axes
+    out_flags = ntuple(d -> 
+                       coords[d] < 1 || coords[d] > p.size[d], 
+                       Val(NDIMS))
+    num_out   = sum(out_flags)
+
+    # Fast path: Interior cell
+    if num_out == 0
+        return _state_at(u, I, p)
     end
-    
-    # Determine which boundary this is and apply the appropriate BC
-    if neighbor_i < 1  # Left ghost cell
-        if isa(bcfg.left, PeriodicBC)
-            wrapped_j = (1 <= neighbor_j <= p.ny) ? neighbor_j : _wrap_index(neighbor_j, p.ny)
-            return _state_at(u, p.nx, wrapped_j, p)
-        end
 
-        # Interior cell just inside boundary
-        interior_i = 1 
-        interior_j = neighbor_j
-        if interior_j < 1 || interior_j > p.ny # if it's a ghost cell in j
-            interior_j = clamp(neighbor_j, 1, p.ny)  # clamp if needed (do not wrap it)
-        end
-
-        x_interior     = p.xmin
-        interior_state = _state_at(u, interior_i, interior_j, p)
-        y_val          = p.ymin + (interior_j - 0.5) * p.dy
-        bc_state       = apply_bc(bcfg.left, interior_state, x_interior, y_val, t, p)
-
-        return bc_state
-        
-    elseif neighbor_i > p.nx  # Right ghost cell
-        if isa(bcfg.right, PeriodicBC)
-            wrapped_j = (1 <= neighbor_j <= p.ny) ? neighbor_j : _wrap_index(neighbor_j, p.ny)
-            return _state_at(u, 1, wrapped_j, p)
-        end
-
-        interior_i, interior_j = p.nx, neighbor_j
-        if interior_j < 1 || interior_j > p.ny
-            interior_j = clamp(neighbor_j, 1, p.ny)
-        end
-        x_interior     = p.xmax
-        interior_state = _state_at(u, interior_i, interior_j, p)
-        y_val          = p.ymin + (interior_j - 0.5) * p.dy
-        bc_state       = apply_bc(bcfg.right, interior_state, x_interior, y_val, t, p)
-
-        return bc_state
-        
-    elseif neighbor_j < 1  # Bottom ghost cell
-        if isa(bcfg.bottom, PeriodicBC)
-            wrapped_i = 1 <= neighbor_i <= p.nx ? neighbor_i : _wrap_index(neighbor_i, p.nx)
-            return _state_at(u, wrapped_i, p.ny, p)
-        end
-
-        interior_i, interior_j = neighbor_i, 1
-        if interior_i < 1 || interior_i > p.nx
-            interior_i = clamp(neighbor_i, 1, p.nx)
-        end
-        y_interior     = p.ymin
-        interior_state = _state_at(u, interior_i, interior_j, p)
-        x_val          = p.xmin + (interior_i - 0.5) * p.dx
-        bc_state       = apply_bc(bcfg.bottom, interior_state, x_val, y_interior, t, p)
-
-        return bc_state
-        
-    elseif neighbor_j > p.ny  # Top ghost cell
-        if isa(bcfg.top, PeriodicBC)
-            wrapped_i = 1 <= neighbor_i <= p.nx ? neighbor_i : _wrap_index(neighbor_i, p.nx)
-            return _state_at(u, wrapped_i, 1, p)
-        end
-
-        interior_i, interior_j = neighbor_i, p.ny
-        if interior_i < 1 || interior_i > p.nx
-            interior_i = clamp(neighbor_i, 1, p.nx)
-        end
-        y_interior     = p.ymax
-        interior_state = _state_at(u, interior_i, interior_j, p)
-        x_val          = p.xmin + (interior_i - 0.5) * p.dx
-        bc_state       = apply_bc(bcfg.top, interior_state, x_val, y_interior, t, p)
-        
-        return bc_state
+    # Safety Guard: Explicitly reject corner ghost cells for 5-point stencils 
+    if num_out > 1
+        error(
+            "Corner ghost cell accessed at $coords. " *
+            "The current 5-point stencil configuration should not access multi-axis corners."
+        )
     end
+
+    # Find the single out-of-bounds axis type-stably (double out-of-bounds are corner ghost cells, hence rejected above)
+    axis = sum(ntuple(d -> 
+                      out_flags[d] ? d : 0, 
+                      Val(NDIMS)))
+    sign = coords[axis] < 1 ? -1 : 1
+
+    # Fetch the BC via union splitting
+    bc = _side_bc(get_bc_config(p), axis, sign)
+
+    if bc isa PeriodicBC
+        wrapped = ntuple(d -> 
+                         d == axis ? _wrap_index(coords[d], p.size[d]) : clamp(coords[d], 1, p.size[d]), 
+                         Val(NDIMS))
+        return _state_at(u, 
+                         CartesianIndex(wrapped), 
+                         p)
+    end
+
+    # Type-stable geometry calculations for physical boundaries
+    interior       = ntuple(d -> 
+                            clamp(coords[d], 1, p.size[d]), 
+                            Val(NDIMS))
+
+    interior_state = _state_at(u, 
+                               CartesianIndex(interior), 
+                               p)
     
-    error("Unexpected neighbor location: ($neighbor_i, $neighbor_j)")
+    # finds centre of the boundary face i.e. centre of left face; top face etc. given that cell is touching the boundary
+    point = ntuple(d -> 
+                   d == axis ? (sign < 0 ? p.domain_min[d] : p.domain_max[d]) : p.domain_min[d] + (interior[d] - 0.5) * p.dx[d],
+                   Val(NDIMS))
+
+    # Dirichlet and Neumann BCs are handled here using multiple dispatch.
+    return SVector{NDIMS + 1, eltype(u)}(apply_bc(bc, 
+                                                  interior_state, 
+                                                  point, 
+                                                  t, 
+                                                  p, 
+                                                  axis))
+end
+
+function get_boundary_state(neighbor_i::Int, 
+                            neighbor_j::Int, 
+                            p::RelaxationParams{2}, 
+                            u::AbstractVector, 
+                            t::Real)
+
+    return get_boundary_state(CartesianIndex(neighbor_i, neighbor_j), 
+                              p, 
+                              u, 
+                              t)
+end
+
+@inline function neighbor_index(I::CartesianIndex{NDIMS}, 
+                                p::RelaxationParams{NDIMS}, 
+                                axis::Int, 
+                                sign::Int) where {NDIMS}
+
+    coords  = Tuple(I)
+    shifted = ntuple(d -> 
+                     d == axis ? coords[d] + sign : 
+                     coords[d], NDIMS)
+
+    # For interior cells
+    if all(1 <= shifted[d] <= p.size[d] for d in 1:NDIMS)
+        return cell_index(CartesianIndex(shifted), p)
+    end
+
+    # For boundary cells; this change of index make sure build_jacobian_cache gets right neighbour index based on the boundary conditions. 
+    bc = _side_bc(get_bc_config(p), axis, sign)
+
+    if isa(bc, PeriodicBC)
+        wrapped = ntuple(d -> 
+                         d == axis ? _wrap_index(shifted[d], p.size[d]) : clamp(shifted[d], 1, p.size[d]), 
+                         NDIMS)
+        return cell_index(CartesianIndex(wrapped), p)
+
+    elseif isa(bc, NeumannBC)
+        # Neumann ghost states move with the interior state (du_ghost/du_interior = 1)
+        clamped = ntuple(d -> 
+                        clamp(shifted[d], 1, p.size[d]), 
+                        NDIMS)
+        return cell_index(CartesianIndex(clamped), p)
+
+    else
+        # Dirichlet ghost states are constant (du_ghost/du_interior = 0).
+        # Return 0 so build_jacobian_cache drops the derivative mapping.
+        return 0
+    end
+end
+
+function neighbor_index(i::Int, 
+                        j::Int, 
+                        p::RelaxationParams{2}, 
+                        side::Symbol)
+
+    # Format is: (axis, sign)
+    axis, sign = side == :left   ? (1, -1) : 
+                 side == :right  ? (1, 1)  : 
+                 side == :bottom ? (2, -1) :
+                 side == :top    ? (2, 1)  : 
+                 error("Unknown side")
+
+    return neighbor_index(CartesianIndex(i, j), 
+                          p, 
+                          axis, 
+                          sign)
 end

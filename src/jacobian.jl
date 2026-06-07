@@ -1,61 +1,44 @@
-# --- Boundary Condition Logic ---
-@inline function neighbor_index(i, j, p, side)
-    bcfg = get_bc_config(p)
+"""
+    _local_stencil_indices(I, p)
 
-    if side == :left
-        if i == 1
-            if isa(bcfg.left, PeriodicBC)
-                return cell_index(p.nx, j, p)
-            elseif isa(bcfg.left, NeumannBC)
-                return cell_index(1, j, p)
-            else
-                return 0
-            end
+Generate a compile-time unrolled `NTuple` containing the flat global indices of a 
+dimension-agnostic \$(2 \\cdot \\text{NDIMS} + 1)\$-point stencil centered at `I`.
+
+This function maps a linear sequence of `block` IDs to a structured spatial coordinate 
+stencil. The mapping is dimension-agnostic and relies on integer arithmetic to alter 
+coordinate axes sequentially.
+
+# Block Mapping Rules
+The returned tuple orders the global linear memory offsets as follows:
+- `block = 1`: The **Center** cell index itself.
+- `block = 2`: **Left** neighbor (axis 1, step -1) -> \$(i-1, j, \\dots)\$
+- `block = 3`: **Right** neighbor (axis 1, step +1) -> \$(i+1, j, \\dots)\$
+- `block = 4`: **Bottom** neighbor (axis 2, step -1) -> \$(i, j-1, \\dots)\$
+- `block = 5`: **Top** neighbor (axis 2, step +1) -> \$(i, j+1, \\dots)\$
+- `block = 2*d / 2*d+1`: Alternating negative and positive neighbor steps along axis \$d\$.
+
+# Arguments
+- `I::CartesianIndex{NDIMS}`: The active interior cell's multi-dimensional coordinate index.
+- `p::RelaxationParams{NDIMS}`: The structural solver configuration parameters.
+
+# Returns
+- `NTuple{2*NDIMS + 1, Int}`: A type-stable tuple of the flat, 1D global positions of the 
+  stencil cluster, ready to be mapped straight into the global Jacobian assembly slots.
+"""
+
+@inline function _local_stencil_indices(I::CartesianIndex{NDIMS}, 
+                                        p::RelaxationParams{NDIMS}) where {NDIMS}
+    return ntuple(block -> begin
+        if block == 1
+            return cell_index(I, p)
         end
-        return cell_index(i - 1, j, p)
 
-    elseif side == :right
-        if i == p.nx
-            if isa(bcfg.right, PeriodicBC)
-                return cell_index(1, j, p)
-            elseif isa(bcfg.right, NeumannBC)
-                return cell_index(p.nx, j, p)
-            else
-                return 0
-            end
-        end
-        return cell_index(i + 1, j, p)
-
-    elseif side == :bottom
-        if j == 1
-            if isa(bcfg.bottom, PeriodicBC)
-                return cell_index(i, p.ny, p)
-            elseif isa(bcfg.bottom, NeumannBC)
-                return cell_index(i, 1, p)
-            else
-                return 0
-            end
-        end
-        return cell_index(i, j - 1, p)
-
-    elseif side == :top
-        if j == p.ny
-            if isa(bcfg.top, PeriodicBC)
-                return cell_index(i, 1, p)
-            elseif isa(bcfg.top, NeumannBC)
-                return cell_index(i, p.ny, p)
-            else
-                return 0
-            end
-        end
-        return cell_index(i, j + 1, p)
-    end
-
-    error("Unknown side")
+        axis = div((block - 2), 2) + 1
+        sign = isodd(block) ? 1 : -1
+        return neighbor_index(I, p, axis, sign)
+    end, 2 * NDIMS + 1)
 end
 
-
-# --- Cache Structure ---
 """
     SparseJacobianCache{T, Ti, TIn, TOut, TJ, TCfg, F}
 
@@ -65,7 +48,7 @@ entries inside `J.nzval`, and pre-allocated buffers used by ForwardDiff.
 
 - `J`: the sparse Jacobian prototype (SparseMatrixCSC) with the correct
     sparsity pattern and writable `nzval` storage.
-- `positions`: an Int[3,15,ncells] mapping allowing direct in-place updates
+- `positions`: an Int[3,15,_ncells] mapping allowing direct in-place updates
     of `J.nzval` from a 3×15 local Jacobian without searching the global
     structure at runtime.
 - `x_cache`, `y_cache`, `Jloc_cache`, `cfg`, `f_closure`: ForwardDiff
@@ -95,81 +78,73 @@ end
 Build the sparse Jacobian prototype and cached ForwardDiff buffers used by the
 backward-Euler solve.
 """
-function build_jacobian_cache(p::RelaxationParams; flux = :rusanov)
-    ncells = p.nx * p.ny
-    n = 3 * ncells
+function build_jacobian_cache(p::RelaxationParams{NDIMS}; 
+                              flux = :rusanov, 
+                              gamma = 1.4) where {NDIMS}
+
+    _ncells      = ncells(p)
+    nvars        = NDIMS + 1
+    stencil_size = (2 * NDIMS + 1) * nvars
+    n            = nvars * _ncells
 
     # Pre-allocate sparse matrix builder arrays
-    I = Int[]
+    I     = Int[]
     J_col = Int[]
-    sizehint!(I, 45 * ncells)
-    sizehint!(J_col, 45 * ncells)
+
+    sizehint!(I, 
+              stencil_size * nvars * _ncells)
+    sizehint!(J_col, 
+              stencil_size * nvars * _ncells)
 
     # Pass 1: Build the global sparsity pattern
-    for j in 1:p.ny
-        for i in 1:p.nx
-            center = cell_index(i, j, p)
-            neighbors = (
-                center, 
-                neighbor_index(i, j, p, :left),
-                neighbor_index(i, j, p, :right),
-                neighbor_index(i, j, p, :bottom),
-                neighbor_index(i, j, p, :top)
-            )
+    for Icell in CartesianIndices(p.size)
+        center    = cell_index(Icell, p)
+        neighbors = _local_stencil_indices(Icell, p)
 
-            for row_var in 0:2
-                row = row_var * ncells + center
-                for neighbor in neighbors
-                    neighbor == 0 && continue
-                    for col_var in 0:2
-                        col = col_var * ncells + neighbor
-                        push!(I, row)
-                        push!(J_col, col)
-                    end
+        for row_var in 0:(nvars - 1)
+            row = row_var * _ncells + center
+            for neighbor in neighbors
+                neighbor == 0 && continue
+                for col_var in 0:(nvars - 1)
+                    col = col_var * _ncells + neighbor
+                    push!(I, row)
+                    push!(J_col, col)
                 end
             end
         end
     end
 
-    J = sparse(I, J_col, ones(Float64, length(I)), n, n)
+    J        = sparse(I, J_col, ones(Float64, length(I)), n, n)
     J.nzval .= 0.0
 
     # Pass 2: Map local elements directly to J.nzval indices
-    positions = zeros(Int, 3, 15, ncells)
-    
-    for j in 1:p.ny
-        for i in 1:p.nx
-            center = cell_index(i, j, p)
-            neighbors = (
-                center, 
-                neighbor_index(i, j, p, :left),
-                neighbor_index(i, j, p, :right),
-                neighbor_index(i, j, p, :bottom),
-                neighbor_index(i, j, p, :top)
-            )
+    positions = zeros(Int, 
+                      nvars, 
+                      stencil_size, 
+                      _ncells)
 
-            for row_var in 0:2
-                row = row_var * ncells + center
-                for (neighbor_idx, neighbor) in enumerate(neighbors)
-                    neighbor == 0 && continue
-                    
-                    for col_var in 0:2
-                        col = col_var * ncells + neighbor
-                        local_col_idx = (neighbor_idx - 1) * 3 + col_var + 1
-                        
-                        col_start = J.colptr[col]
-                        col_end = J.colptr[col+1] - 1
-                        
-                        # Search within the column for the exact row index.
-                        # Use findfirst to ensure we only map when an exact entry exists.
-                        col_rows = @view(J.rowval[col_start:col_end])
-                        rel_idx = findfirst(==(row), col_rows)
-                        if rel_idx === nothing
-                            # leave as zero (no entry in this column for that row)
-                            positions[row_var+1, local_col_idx, center] = 0
-                        else
-                            positions[row_var+1, local_col_idx, center] = col_start + rel_idx - 1
-                        end
+    for Icell in CartesianIndices(p.size)
+        center    = cell_index(Icell, p)
+        neighbors = _local_stencil_indices(Icell, p)
+
+        for row_var in 0:(nvars - 1)
+            row = row_var * _ncells + center
+            for (neighbor_idx, neighbor) in enumerate(neighbors)
+                neighbor == 0 && continue
+
+                for col_var in 0:(nvars - 1)
+                    col           = col_var * _ncells + neighbor
+                    local_col_idx = (neighbor_idx - 1) * nvars + col_var + 1
+
+                    col_start = J.colptr[col]
+                    col_end   = J.colptr[col + 1] - 1
+
+                    col_rows = @view(J.rowval[col_start:col_end])
+                    rel_idx  = findfirst(==(row), col_rows)
+                    if rel_idx === nothing
+                        positions[row_var + 1, local_col_idx, center] = 0
+                    else
+                        positions[row_var + 1, local_col_idx, center] = col_start + rel_idx - 1
                     end
                 end
             end
@@ -177,25 +152,35 @@ function build_jacobian_cache(p::RelaxationParams; flux = :rusanov)
     end
 
 # --- ForwardDiff Pre-allocations ---
-    resolved_flux = resolve_flux(flux)
+    resolved_flux = resolve_flux(flux; gamma = gamma)
     
-    x_cache = zeros(Float64, 15)       # Input (local_u)
-    y_cache = zeros(Float64, 3)        # Output (drho, dmx, dmy)
-    Jloc_cache = zeros(Float64, 3, 15) # Output Jacobian
+    x_cache = zeros(Float64, stencil_size)              # Used for Input (i.e. local_u)
+    y_cache = zeros(Float64, nvars)                     # Used for Output (i.e. drho, dmx, dmy)
+    Jloc_cache = zeros(Float64, nvars, stencil_size)    # Used for Output (i.e. Jacobian)
 
     # Create an in-place mutating function: f!(output, input)
     f! = (y, x) -> begin
-        drho, dmx, dmy = local_residual(x, p; flux = resolved_flux)
-        y[1] = drho
-        y[2] = dmx
-        y[3] = dmy
+        res = local_residual(x, 
+                             p; 
+                             flux = resolved_flux)
+        for v in 1:nvars
+            y[v] = res[v]
+        end
         return nothing
     end
 
-    # Pre-allocate the dual numbers locking the Chunk size to 15
-    cfg = ForwardDiff.JacobianConfig(f!, y_cache, x_cache, ForwardDiff.Chunk{15}())
+    cfg = ForwardDiff.JacobianConfig(f!, 
+                                     y_cache, 
+                                     x_cache, 
+                                     ForwardDiff.Chunk(x_cache))
 
-    return SparseJacobianCache(J, positions, x_cache, y_cache, Jloc_cache, cfg, f!)
+    return SparseJacobianCache(J, 
+                               positions, 
+                               x_cache, 
+                               y_cache, 
+                               Jloc_cache, 
+                               cfg, 
+                               f!)
 end
 
 
@@ -205,40 +190,47 @@ end
 Assemble the backward-Euler Jacobian `I - dt * dF/du` into the cached sparse
 matrix.
 """
-function assemble_global_jacobian!(cache::SparseJacobianCache, u, p::RelaxationParams, dt::Float64, t::Float64; flux = :rusanov)
-    nz = cache.J.nzval
+function assemble_global_jacobian!(cache::SparseJacobianCache, 
+                                   u, 
+                                   p::RelaxationParams{NDIMS}, 
+                                   dt::Float64, 
+                                   t::Float64; 
+                                   flux = :rusanov) where {NDIMS}
+    nz        = cache.J.nzval
     positions = cache.positions
-    nz .= 0.0 
+    nz       .= 0.0 
 
-    ncells = p.nx * p.ny
+    _ncells = ncells(p)
+    nvars   = NDIMS + 1
 
-    for j in 1:p.ny
-        for i in 1:p.nx
-            center = cell_index(i, j, p)
-            local_u = gather_local_state(u, i, j, p, t)
-            
-            # 1. Copy the gathered tuple into our pre-allocated input cache
-            for k in 1:15
-                cache.x_cache[k] = local_u[k]
-            end
+    for Icell in CartesianIndices(p.size)
+        center  = cell_index(Icell, p)
+        local_u = gather_local_state(u, Icell, p, t)
 
-            # 2. Compute the local Jacobian IN-PLACE (Zero Allocations!)
-            ForwardDiff.jacobian!(cache.Jloc_cache, cache.f_closure, cache.y_cache, cache.x_cache, cache.cfg)
+        for k in 1:length(cache.x_cache)
+            cache.x_cache[k] = local_u[k]
+        end
 
-            for row_var in 0:2
-                for local_col_idx in 1:15
-                    pos = positions[row_var+1, local_col_idx, center]
-                    if pos == 0
-                        continue
-                    end
+        ForwardDiff.jacobian!(cache.Jloc_cache, 
+                              cache.f_closure, 
+                              cache.y_cache, 
+                              cache.x_cache, 
+                              cache.cfg)
 
-                    # 3. Use the cached Jacobian
-                    val = -dt * cache.Jloc_cache[row_var + 1, local_col_idx]
-                    if local_col_idx == row_var + 1
-                        val += 1.0
-                    end
-                    nz[pos] += val
+        for row_var in 0:(nvars - 1)
+            for local_col_idx in 1:length(cache.x_cache)
+                pos = positions[row_var + 1, 
+                                local_col_idx, 
+                                center]
+                if pos == 0
+                    continue
                 end
+
+                val = -dt * cache.Jloc_cache[row_var + 1, local_col_idx]
+                if local_col_idx == row_var + 1
+                    val += 1.0
+                end
+                nz[pos] += val
             end
         end
     end

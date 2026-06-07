@@ -1,5 +1,5 @@
 # ==============================================================================
-# 1D OPTIMIZED RECIPE (Overlaid Stacking)
+# 1D OPTIMIZED RECIPE
 # 1 Row, 2 Columns -> Initial and Final states drawn inside the same window
 # ==============================================================================
 @recipe function f(sol::sol1D)
@@ -63,7 +63,7 @@
 end
 
 # ==============================================================================
-# 2D OPTIMIZED RECIPE (Overlaid Analysis)
+# 2D OPTIMIZED RECIPE
 # 1 Row, 3 Columns -> Final Solution as Heatmap, Initial Condition as Contour lines
 # ==============================================================================
 @recipe function f(sol::sol2D)

@@ -6,6 +6,7 @@ cache.
 """
 function build_problem(;
     ic_func,
+    size = nothing,
     nx = 32,        # optional parameters when nothing is provided by the user
     ny = 32,
     eps = 0.05,
@@ -18,49 +19,82 @@ function build_problem(;
     bottom_bc = :periodic,
     top_bc = :periodic,
     bc_funcs = nothing,
-    flux = :rusanov
+    flux = :rusanov,
+    gamma = 1.4
 )
 
-    dx = (xmax - xmin) / nx
-    dy = (ymax - ymin) / ny
+    _normalize_tuple(value, ndims) = value isa Number ? 
+        ntuple(_ -> Float64(value), ndims) :
+        begin
+            tuple_value = Tuple(value)
+            length(tuple_value) == ndims || error("Expected $ndims entries, got $(length(tuple_value))")
+            ntuple(d -> Float64(tuple_value[d]), ndims)
+        end
 
-    # Generate arrays representing the cell centers
-    x = range(xmin + dx/2, xmax - dx/2; length = nx)
-    y = range(ymin + dy/2, ymax - dy/2; length = ny)
+    grid_size = size === nothing ? (nx, ny) : Tuple(size)
+    ndims = length(grid_size)
+
+    # Only for 1D and 2D for now
+    domain_min = ndims == 2 &&
+                 xmin isa Number && 
+                 xmax isa Number ? 
+                (Float64(xmin), Float64(ymin)) :
+                 _normalize_tuple(xmin, ndims)
+
+    domain_max = ndims == 2 && 
+                 xmin isa Number && 
+                 xmax isa Number ?
+                (Float64(xmax), Float64(ymax)) : 
+                 _normalize_tuple(xmax, ndims)
+
+    dx = ntuple(d -> 
+               (domain_max[d] - domain_min[d]) / grid_size[d], 
+                ndims)
+
+    # Generate arrays representing the cell centers for each ndims
+    # Tuple of two arrays containing cell centres in each dimension.
+    coords = ntuple(d -> range(domain_min[d] + dx[d] / 2, 
+                               domain_max[d] - dx[d] / 2; 
+                               length = grid_size[d]), ndims)
 
     # Create boundary condition configuration
-    bc_config = BCConfig(
-        left = left_bc,
-        right = right_bc,
-        bottom = bottom_bc,
-        top = top_bc,
+    bc_config    = BCConfig(
+        left     = left_bc,
+        right    = right_bc,
+        bottom   = bottom_bc,
+        top      = top_bc,
         bc_funcs = bc_funcs
     )
 
     p = RelaxationParams(
         eps,
-        nx,
-        ny,
-        (xmax - xmin) / nx,
-        (ymax - ymin) / ny,
-        xmin,
-        xmax,
-        ymin,
-        ymax,
+        grid_size,
+        dx,
+        domain_min,
+        domain_max,
         bc_config
     )
-    ncells = nx * ny
-    u0 = zeros(3 * ncells)
+    ncells = prod(grid_size)
+    nvars = ndims + 1
+    u0 = zeros(nvars * ncells)
 
-    for j in 1:ny
-        for i in 1:nx
-            idx = cell_index(i, j, p)
-            rho0, mx0, my0 = ic_func(x[i], y[j])
+    for I in CartesianIndices(grid_size)
+        idx   = cell_index(I, p)
+        point = ntuple(d -> coords[d][I[d]], ndims)
+        state = Tuple(ic_func(point...))
 
-            u0[idx]              = rho0
-            u0[ncells + idx]     = mx0
-            u0[2 * ncells + idx] = my0
+        for v in 1:nvars
+            u0[(v - 1) * ncells + idx] = state[v]
         end
     end
-    return u0, x, y, p, build_jacobian_cache(p; flux = flux)
+
+    if ndims == 1
+        return u0, coords[1], nothing, p, build_jacobian_cache(p; 
+                                                               flux = flux,
+                                                               gamma = gamma)
+    else
+        return u0, coords[1], coords[2], p, build_jacobian_cache(p; 
+                                                                 flux = flux,
+                                                                 gamma = gamma)
+    end
 end
