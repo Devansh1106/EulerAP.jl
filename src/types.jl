@@ -46,30 +46,6 @@ end
                   NDIMS)
 end
 
-function Base.getproperty(p::RelaxationParams, s::Symbol)
-    if s === :nx
-        return getfield(p, :size)[1]
-
-    elseif s === :ny
-        return length(getfield(p, :size)) >= 2 ? getfield(p, :size)[2] : 1
-
-    elseif s === :xmin
-        return getfield(p, :domain_min)[1]
-
-    elseif s === :xmax
-        return getfield(p, :domain_max)[1]
-
-    elseif s === :ymin
-        return length(getfield(p, :domain_min)) >= 2 ? getfield(p, :domain_min)[2] : getfield(p, :domain_min)[1]
-
-    elseif s === :ymax
-        return length(getfield(p, :domain_max)) >= 2 ? getfield(p, :domain_max)[2] : getfield(p, :domain_max)[1]
-
-    else
-        return getfield(p, s)
-    end
-end
-
 # For 2D
 @inline cell_index(i::Int, 
                    j::Int, 

@@ -5,6 +5,7 @@ using NonlinearSolve
 using SparseArrays
 using LinearSolve
 using Pardiso
+using HDF5
 using RecipesBase
 
 # --- 1D Solution Structure (Zero-Allocation Layout) ---
@@ -54,6 +55,7 @@ export rusanov_flux
 export build_problem
 export solve_backward_euler
 export print_run_stats
+export save_solution_h5
 export resolve_flux
 export gather_local_state
 export local_residual

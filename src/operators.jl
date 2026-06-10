@@ -165,7 +165,7 @@ function implicit_part!(du,
             right_idx = neighbor_index(I, p, axis, 1)
             if right_idx != 0
                 right_state = right_idx == idx ? 
-                              center : 
+                              get_boundary_state(_step_index(I, axis, 1), p, u, t) : 
                               _global_state(u, 
                                             right_idx, 
                                             _ncells, 
@@ -182,7 +182,7 @@ function implicit_part!(du,
                         du[(v - 1) * _ncells + right_idx] += face_flux[v] * inv_dx
                     end
                 end
-            else
+            else # Dirichlet case 
                 right_state = get_boundary_state(_step_index(I, axis, 1), 
                                                  p, 
                                                  u, 

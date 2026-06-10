@@ -35,6 +35,15 @@ struct NeumannBC{F} <: AbstractBC
 end
 
 """
+    ExtrapolateBC
+
+Extrapolation boundary condition.
+For state vector (ρ, mx, my, ...):
+- All components are extrapolated from the interior (zero normal gradient).
+"""
+struct ExtrapolateBC <: AbstractBC end
+
+"""
     BCConfig
 
 Configuration specifying boundary conditions on each side of the domain.
@@ -121,8 +130,11 @@ function _parse_bc_spec(spec::Symbol,
 
         return NeumannBC(func)
 
+    elseif spec == :extrapolate
+        return ExtrapolateBC()
+
     else
-        error("Unknown BC type: $spec. Must be :periodic, :dirichlet, or :neumann")
+        error("Unknown BC type: $spec. Must be :periodic, :dirichlet, :neumann, or :extrapolate")
     end
 end
 
@@ -181,6 +193,20 @@ function apply_bc(bc::NeumannBC,
                              state_val[i] + grad[i] * delta, 
                              M))
     end
+end
+
+function apply_bc(bc::ExtrapolateBC, 
+                  state_val::AbstractVector, 
+                  coords::Tuple, 
+                  t::Real, 
+                  p::RelaxationParams, 
+                  axis::Int)
+    M = length(state_val)
+    T = eltype(state_val)
+
+    # Pure extrapolation: ghost cell perfectly mirrors the interior cell
+    # This sets ∂ρ/∂n = 0, ∂mx/∂n = 0, ∂my/∂n = 0
+    return SVector{M, T}(ntuple(i -> state_val[i], M))
 end
 
 """
@@ -361,8 +387,9 @@ end
                          NDIMS)
         return cell_index(CartesianIndex(wrapped), p)
 
-    elseif isa(bc, NeumannBC)
-        # Neumann ghost states move with the interior state (du_ghost/du_interior = 1)
+    elseif isa(bc, NeumannBC) || isa(bc, ExtrapolateBC)
+        # Neumann and ExtrapolateBC ghost states depend on interior state (derivatives ≠ 0)
+        # Return interior cell index so build_jacobian_cache maps derivatives correctly
         clamped = ntuple(d -> 
                         clamp(shifted[d], 1, p.size[d]), 
                         NDIMS)

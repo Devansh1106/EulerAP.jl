@@ -44,6 +44,12 @@ function executes completely in-place with **zero heap allocations**:
   (`dt`, `t`), the underlying model parameters (`p.model`), and historical step vectors (`u_prev`).
 """
 function backward_euler_residual!(res, u, p::ImplicitStepData)
+    # Positivity preservation: clamp density to prevent negative values
+    # during Newton iterations. The Jacobian is assembled separately via
+    # local_residual, so this does NOT affect the Jacobian computation.
+    # ncells = prod(p.model.size)
+    # @views @. u[1:ncells] = max(u[1:ncells], 1e-12)
+
     implicit_part!(res, u, p.model, p.t; resolved_flux = p.flux)
     @. res = u - p.u_prev - p.dt * res
     
