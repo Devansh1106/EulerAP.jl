@@ -54,7 +54,7 @@ function backward_euler_residual!(res, u, p::ImplicitStepData)
     @. res = u - p.u_prev - p.dt * res
     
     return nothing
-end
+end 
 
 """
     solve_backward_euler(u0, p, tspan, jac_cache; kwargs...)
