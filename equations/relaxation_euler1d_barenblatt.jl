@@ -1,6 +1,12 @@
 using EulerAP
 # using Plots
-# using FiniteDifferences
+
+# The result from this IC is not what we are expecting. With ϵ=1, we expect the solution to be far away from exact sol (BarenBlatt is 
+# an exact sol) and as ϵ ≪ 1, we expect the solution to approach the exact sol. But currently the behavior is exactly opposite, it 
+# matches with ϵ=1 and moves away as we reduce ϵ ≪ 1.
+
+# Why we expect whatever is mentioned above: Since as ϵ→0, the relaxed Euler system converges to Porous Medium Equation (PME) whose
+# exact solution is the BarenBlatt hence for ϵ ≪ 1, we expect it go closer to the BarenBlatt exact solution and be far away for ϵ=1.
 
 tspan = (1.0, 1.2)
 tol   = 1e-8
