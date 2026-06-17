@@ -56,7 +56,7 @@ struct BCConfig{L <:AbstractBC, R <:AbstractBC, B <:AbstractBC, T <:AbstractBC}
 end
 
 """
-    BCConfig(; left=:periodic, right=:periodic, bottom=:periodic, top=:periodic, bc_funcs=nothing)
+    BCConfig(; left, right, bottom, top, bc_funcs=nothing)
 
 Outer constructor for the `BCConfig` struct that parses and stores boundary condition 
 specifications for a 2D computational domain.
@@ -71,17 +71,12 @@ and instantiates concrete, type-stable boundary condition types (`PeriodicBC`, `
 - `bottom`: Coordinate boundary at \$y = y_{\\text{min}}\$ (Axis 2, Sign -1)
 - `top`: Coordinate boundary at \$y = y_{\\text{max}}\$ (Axis 2, Sign +1)
 
-# Default State Vector Evaluation
-If numerical boundary types (Dirichlet or Neumann) are selected but no coordinate function 
-is supplied via `bc_funcs`, a zero-fallback function `(x, y, t) -> (0.0, 0.0, 0.0)` is assigned. 
-This function returns a zero vector corresponding to the three state variables 
-([\$\\rho, m_x, m_y\$]).
 
 # Keyword Arguments
-- `left`: Boundary type for the left wall (defaults to `:periodic`).
-- `right`: Boundary type for the right wall (defaults to `:periodic`).
-- `bottom`: Boundary type for the bottom wall (defaults to `:periodic`).
-- `top`: Boundary type for the top wall (defaults to `:periodic`).
+- `left`: Boundary type for the left wall.
+- `right`: Boundary type for the right wall.
+- `bottom`: Boundary type for the bottom wall.
+- `top`: Boundary type for the top wall.
 - `bc_funcs::Union{Nothing, NamedTuple}`: Named tuple mapping boundary keys to space-time 
   coordinate functions `f(x, y, t)` that return state vectors or normal derivatives.
 
@@ -89,46 +84,46 @@ This function returns a zero vector corresponding to the three state variables
 - `BCConfig`: A structural container holding the concrete boundary sub-types for dispatch 
   inside spatial flux routines.
 """
-function BCConfig(; # default values
-    left     = :periodic,
-    right    = :periodic,
-    bottom   = :periodic,
-    top      = :periodic,
-    bc_funcs =  nothing
+function BCConfig(;
+    left,
+    right,
+    bottom,
+    top,
+    bc_funcs = nothing
 )
-    default_func = (x, y, t) -> (0.0, 0.0, 0.0)
-    
-    left_bc   = _parse_bc_spec(left, bc_funcs, :left, default_func)
-    right_bc  = _parse_bc_spec(right, bc_funcs, :right, default_func)
-    bottom_bc = _parse_bc_spec(bottom, bc_funcs, :bottom, default_func)
-    top_bc    = _parse_bc_spec(top, bc_funcs, :top, default_func)
+    left_bc   = _parse_bc_spec(left, bc_funcs, :left)
+    right_bc  = _parse_bc_spec(right, bc_funcs, :right)
+    bottom_bc = _parse_bc_spec(bottom, bc_funcs, :bottom)
+    top_bc    = _parse_bc_spec(top, bc_funcs, :top)
     
     return BCConfig(left_bc, right_bc, bottom_bc, top_bc)
 end
 
-function _parse_bc_spec(spec::Symbol, 
+function _parse_bc_spec(spec::Union{Symbol, Nothing}, 
                         bc_funcs::Union{Nothing, AbstractDict}, 
-                        side::Symbol, 
-                        default_func::Function)
+                        side::Symbol)
+    
+    # In the case of 1D when bottom and top are `Nothing`, it default to PeriodicBC 
+    # No harm in this since 1D will not access them anyway.
+    # TODO: is there a better for this which is dimension agnostic too?
+    if spec === nothing
+        return PeriodicBC()
+    end
 
     if spec == :periodic
         return PeriodicBC()
 
     elseif spec == :dirichlet
-        func = (bc_funcs !== nothing && 
-                haskey(bc_funcs, side)) ? 
-                bc_funcs[side] : 
-                default_func
-                
-        return DirichletBC(func)
+        if bc_funcs === nothing || !haskey(bc_funcs, side)
+            error("`bc_funcs` must provide key `:$side` for Dirichlet BC")
+        end
+        return DirichletBC(bc_funcs[side])
 
     elseif spec == :neumann
-        func = (bc_funcs !== nothing && 
-                haskey(bc_funcs, side)) ? 
-                bc_funcs[side] : 
-                default_func
-
-        return NeumannBC(func)
+        if bc_funcs === nothing || !haskey(bc_funcs, side)
+            error("`bc_funcs` must provide key `:$side` for Neumann BC")
+        end
+        return NeumannBC(bc_funcs[side])
 
     elseif spec == :extrapolate
         return ExtrapolateBC()
@@ -144,19 +139,6 @@ end
 Apply a boundary condition to get the value at a boundary ghost cell.
 """
 
-function apply_bc(bc::PeriodicBC, 
-                  state_val::AbstractVector, 
-                  x::Real, 
-                  y::Real, 
-                  t::Real, 
-                  p::RelaxationParams)
-
-    # Periodic wrapping is handled by the ghost-cell lookup.
-    # This fallback keeps the interior state unchanged (identity function).
-    return state_val
-end
-
-# identity function
 function apply_bc(bc::PeriodicBC, 
                   state_val::AbstractVector, 
                   coords::Tuple, 

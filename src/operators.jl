@@ -132,7 +132,6 @@ function implicit_part!(du,
                         t; 
                         resolved_flux::F) where {NDIMS, F}
 
-    # resolved_flux = resolve_flux(flux)
     _ncells       = ncells(p)
     nvars         = Val(NDIMS + 1)
 
@@ -147,18 +146,24 @@ function implicit_part!(du,
             inv_dx = inv(p.dx[axis])
 
             if coords[axis] == 1
-                left_state = get_boundary_state(_step_index(I, axis, -1), 
-                                                p, 
-                                                u, 
-                                                t)
+                # For periodic BCs, skip the left-face evaluation here because
+                # the right-face dual-update of the last cell wraps around via
+                # neighbor_index and already handles this interface once.
+                bc = _side_bc(get_bc_config(p), axis, -1)
+                if !isa(bc, PeriodicBC)
+                    left_state = get_boundary_state(_step_index(I, axis, -1), 
+                                                    p, 
+                                                    u, 
+                                                    t)
 
-                face_flux  = resolved_flux.flux(left_state, 
-                                                center, 
-                                                axis, 
-                                                p.eps)
+                    face_flux  = resolved_flux(left_state, 
+                                                    center, 
+                                                    axis, 
+                                                    p.eps)
 
-                @inbounds for v in 1:(NDIMS + 1) # variables = NDIMS + 1 (rho, mx, my ...)
-                    du[(v - 1) * _ncells + idx] += face_flux[v] * inv_dx
+                    @inbounds for v in 1:(NDIMS + 1) # variables = NDIMS + 1 (rho, mx, my ...)
+                        du[(v - 1) * _ncells + idx] += face_flux[v] * inv_dx
+                    end
                 end
             end
 
@@ -171,10 +176,10 @@ function implicit_part!(du,
                                             _ncells, 
                                             nvars)
 
-                face_flux = resolved_flux.flux(center, 
-                                               right_state, 
-                                               axis, 
-                                               p.eps)
+                face_flux = resolved_flux(center, 
+                                          right_state, 
+                                          axis, 
+                                          p.eps)
 
                 @inbounds for v in 1:(NDIMS + 1)
                     du[(v - 1) * _ncells + idx] -= face_flux[v] * inv_dx
@@ -188,7 +193,7 @@ function implicit_part!(du,
                                                  u, 
                                                  t)
 
-                face_flux = resolved_flux.flux(center, 
+                face_flux = resolved_flux(center, 
                                                right_state, 
                                                axis, 
                                                p.eps)
@@ -246,7 +251,7 @@ algebraic boundary updates, ensuring correct sensitivity mappings are delivered 
 function gather_local_state(u, 
                             I::CartesianIndex{NDIMS}, 
                             p::RelaxationParams{NDIMS}, 
-                            t::Float64 = 0.0) where {NDIMS}
+                            t::Float64) where {NDIMS}
 
     nvars        = NDIMS + 1
     num_blocks   = 2 * NDIMS + 1
@@ -279,7 +284,7 @@ function gather_local_state(u,
                             i::Int, 
                             j::Int, 
                             p::RelaxationParams{2}, 
-                            t::Float64 = 0.0)
+                            t::Float64)
 
     return gather_local_state(u, 
                               CartesianIndex(i, j), 
@@ -288,7 +293,7 @@ function gather_local_state(u,
 end
 
 """
-    local_residual(local_u, p::RelaxationParams; flux=:rusanov)
+    local_residual(local_u, p::RelaxationParams; resolved_flux)
 
 Compute the localized algebraic residual vector for a single interior cell using its isolated 
 \$(2 \\cdot \\text{NDIMS} + 1)\$-point patch vector.
@@ -319,16 +324,16 @@ route indices to their corresponding spatial direction relative to the center ce
 - `local_u::AbstractVector`: A packed local patch vector of length `(2*NDIMS + 1) * (NDIMS + 1)`. 
   Often contains `ForwardDiff.Dual` types during implicit assembly routines.
 - `p::RelaxationParams{NDIMS}`: Structural solver configuration parameters.
-- `flux::Symbol`: Shortcut identifier for the numerical interface flux formulation (defaults to `:rusanov`).
+- `resolved_flux::FluxPair`: A pre-resolved numerical flux object. Must be obtained via 
+  `resolve_flux` before calling this function. Passing a raw `Symbol` is prohibited.
 
 # Returns
 - `SVector{NDIMS + 1, eltype(local_u)}`: The localized residual vector evaluated for the center cell.
 """
 function local_residual(local_u::AbstractVector{T}, 
                         p::RelaxationParams{NDIMS}; 
-                        flux = :rusanov) where {NDIMS, T}
+                        resolved_flux::FluxPair) where {NDIMS, T}
 
-    resolved_flux = resolve_flux(flux)
     nvars         = NDIMS + 1
 
     # local_u has layout: 1D vector rho_centre, mx_centre, my_centre, rho_left, mx_l, my_l, right, bottom, top
@@ -342,12 +347,12 @@ function local_residual(local_u::AbstractVector{T},
     for axis in 1:NDIMS
         left    = block_state(2 * (axis - 1) + 2)
         right   = block_state(2 * (axis - 1) + 3)
-        f_left  = resolved_flux.flux(left, 
+        f_left  = resolved_flux(left, 
                                      center, 
                                      axis, 
                                      p.eps)
 
-        f_right = resolved_flux.flux(center, 
+        f_right = resolved_flux(center, 
                                      right, 
                                      axis, 
                                      p.eps)

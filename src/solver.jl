@@ -85,11 +85,11 @@ where the true structural Jacobian matching this residual is:
   assembly without triggering global automatic differentiation.
 
 # Keyword Arguments
-- `dt::Float64`: Nominal time step size (defaults to `5.0e-2`).
-- `tol::Float64`: Absolute and relative convergence tolerance thresholds for the Newton loop (defaults to `1e-8`).
-- `flux::Symbol`: Shortcut identifier for the underlying numerical interface flux (defaults to `:rusanov`).
-- `gamma::Float64`: Adiabatic exponent parameter forwarded to the pressure law functions (defaults to `1.4`).
-- `jacobian_builder!`: Callback function handling local stencil differentiation and sparse matrix mapping.
+- `dt::Float64`: Nominal time step size.
+- `tol::Float64`: Absolute and relative convergence tolerance thresholds for the Newton loop.
+- `jacobian_builder!`: Callback function handling local stencil differentiation and sparse matrix mapping (defaults to `assemble_global_jacobian!`).
+
+The flux scheme is specified once in `build_problem` and stored in `jac_cache.resolved_flux`.
 
 # Returns
 - `u::AbstractVector`: Finalized component-blocked solution vector at `t = tspan[2]`.
@@ -102,13 +102,11 @@ function solve_backward_euler(
     p::RelaxationParams,
     tspan,
     jac_cache::SparseJacobianCache;
-    dt = 5.0e-2,
-    tol = 1e-8,
-    flux = :rusanov,
-    gamma = 1.4,
+    dt,
+    tol,
     jacobian_builder! = assemble_global_jacobian!
 )
-    resolved_flux = resolve_flux(flux; gamma = gamma)
+    resolved_flux = jac_cache.resolved_flux
 
     # The closure captures our jac_cache struct. 
     # J_internal is the matrix NonlinearSolve tracks, but we update our cached matrix and copy it to J_internal
@@ -119,8 +117,7 @@ function solve_backward_euler(
                           u, 
                           step_data.model, 
                           step_data.dt, 
-                          step_data.t; 
-                          flux = step_data.flux)
+                          step_data.t)
 
         copyto!(J_internal, jac_cache.J)
         return J_internal
@@ -162,6 +159,7 @@ function solve_backward_euler(
         step_data.dt      = dt_step
         step_data.t       = t + dt_step
         step_data.u_prev .= u
+        resolved_flux.dt[] = dt_step
         nsteps_done      += 1
 
         step_timed = @timed begin

@@ -59,7 +59,7 @@ This structure exists to enable a low-allocation, high-performance local-
 AD assembly strategy where the 3×15 local Jacobian for a cell is written
 directly into the global matrix via the `positions` lookup.
 """
-struct SparseJacobianCache{T, Ti, TIn, TOut, TJ, TCfg, F}
+struct SparseJacobianCache{T, Ti, TIn, TOut, TJ, TCfg, F, FFlux}
     J::SparseMatrixCSC{T, Ti}
     positions::Array{Int, 3}
 
@@ -69,18 +69,18 @@ struct SparseJacobianCache{T, Ti, TIn, TOut, TJ, TCfg, F}
     Jloc_cache::TJ
     cfg::TCfg
     f_closure::F
+    resolved_flux::FFlux
 end
 
 # --- Cache Builder ---
 """
-    build_jacobian_cache(p; flux=:rusanov)
+    build_jacobian_cache(p; resolved_flux)
 
 Build the sparse Jacobian prototype and cached ForwardDiff buffers used by the
 backward-Euler solve.
 """
 function build_jacobian_cache(p::RelaxationParams{NDIMS}; 
-                              flux = :rusanov, 
-                              gamma = 1.4) where {NDIMS}
+                              resolved_flux::FluxPair) where {NDIMS}
 
     _ncells      = ncells(p)
     nvars        = NDIMS + 1
@@ -152,17 +152,15 @@ function build_jacobian_cache(p::RelaxationParams{NDIMS};
     end
 
 # --- ForwardDiff Pre-allocations ---
-    resolved_flux = resolve_flux(flux; gamma = gamma)
-    
-    x_cache = zeros(Float64, stencil_size)              # Used for Input (i.e. local_u)
-    y_cache = zeros(Float64, nvars)                     # Used for Output (i.e. drho, dmx, dmy)
+    x_cache    = zeros(Float64, stencil_size)              # Used for Input (i.e. local_u)
+    y_cache    = zeros(Float64, nvars)                     # Used for Output (i.e. drho, dmy)
     Jloc_cache = zeros(Float64, nvars, stencil_size)    # Used for Output (i.e. Jacobian)
 
     # Create an in-place mutating function: f!(output, input)
     f! = (y, x) -> begin
         res = local_residual(x, 
                              p; 
-                             flux = resolved_flux)
+                             resolved_flux = resolved_flux)
         for v in 1:nvars
             y[v] = res[v]
         end
@@ -180,12 +178,13 @@ function build_jacobian_cache(p::RelaxationParams{NDIMS};
                                y_cache, 
                                Jloc_cache, 
                                cfg, 
-                               f!)
+                               f!,
+                               resolved_flux)
 end
 
 
 """
-    assemble_global_jacobian!(cache, u, p, dt, t; flux=:rusanov)
+    assemble_global_jacobian!(cache, u, p, dt, t)
 
 Assemble the backward-Euler Jacobian `I - dt * dF/du` into the cached sparse
 matrix.
@@ -194,8 +193,7 @@ function assemble_global_jacobian!(cache::SparseJacobianCache,
                                    u, 
                                    p::RelaxationParams{NDIMS}, 
                                    dt::Float64, 
-                                   t::Float64; 
-                                   flux = :rusanov) where {NDIMS}
+                                   t::Float64) where {NDIMS}
     nz        = cache.J.nzval
     positions = cache.positions
     nz       .= 0.0 

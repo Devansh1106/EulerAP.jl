@@ -7,31 +7,35 @@ cache.
 # Keyword Arguments
 - `ic_func`: Initial condition function `f(x..., t) -> (rho, mx, my, ...)`.  
              Called with spatial coordinates and initial time: `ic_func(x..., tspan[1])`.
-- `size       = (32,)`: Tuple of grid sizes per dimension (e.g., (32,) for 1D, (32, 32) for 2D)
-- `eps        = 0.05`: Relaxation parameter
-- `domain_min = (-1.0,)`: Tuple of domain minimums per dimension
-- `domain_max = (1.0,)`: Tuple of domain maximums per dimension
+- `size`: Tuple of grid sizes per dimension (e.g., (32,) for 1D, (32, 32) for 2D)
+- `eps`: Relaxation parameter
+- `domain_min`: Tuple of domain minimums per dimension
+- `domain_max`: Tuple of domain maximums per dimension
 - `tspan`: Time span `(t0, t1)`. `ic_func` is called with time as the last argument:  
            `ic_func(x..., t0)`.
 - `left_bc, right_bc, bottom_bc, top_bc`: Boundary condition symbols
 - `bc_funcs`: Dict of boundary functions for non-periodic BCs
-- `flux       = :rusanov`: Flux scheme
-- `gamma      = 1.4`: Ratio of specific heats
+- `flux`: Flux scheme (e.g., `:rusanov`, `:energy_stable`).
+- `gamma`: Adiabatic exponent.
+- `eta`: Numerical diffusion coefficient η (only used with `:energy_stable` flux).
+  The time-step size `dt` is provided to `solve_backward_euler` and the flux
+  computes `η·Δt` at each step automatically.
 """
 function build_problem(;
     ic_func,
-    size       = (32,),
-    eps        = 0.05,
-    domain_min = (-1.0,),
-    domain_max = (1.0,),
+    size,
+    eps,
+    domain_min,
+    domain_max,
     tspan,
-    left_bc    = :periodic,
-    right_bc   = :periodic,
-    bottom_bc  = :periodic,
-    top_bc     = :periodic,
+    left_bc,
+    right_bc,
+    bottom_bc = nothing,
+    top_bc    = nothing,
     bc_funcs   = nothing,
-    flux       = :rusanov,
-    gamma      = 1.4
+    flux,
+    gamma,
+    eta        = nothing
 )
 
     grid_size = Tuple(size)
@@ -82,5 +86,6 @@ function build_problem(;
         end
     end
 
-    return u0, coords, p, build_jacobian_cache(p; flux = flux, gamma = gamma)
+    resolved_flux = resolve_flux(flux; gamma = gamma, eta = eta)
+    return u0, coords, p, build_jacobian_cache(p; resolved_flux = resolved_flux)
 end

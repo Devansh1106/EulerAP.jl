@@ -68,7 +68,7 @@ The states are `SVector`s with layout `(rho, m_1, ..., m_NDIMS)`.
                               u_r::SVector{N, TR}, 
                               orientation::Int, 
                               eps; 
-                              gamma::Float64 = 1.4) where {N, TL, TR}
+                              gamma::Float64) where {N, TL, TR}
     rho_l = u_l[1]
     rho_r = u_r[1]
 
@@ -105,49 +105,193 @@ end
     return rusanov_flux(SVector(u_l), SVector(u_r), orientation, eps; gamma = gamma)
 end
 
-# Input resolution using Multiple Dispatch
+# =============================================================================
+# Energy-Stable Flux
+# =============================================================================
+"""
+    energy_stable_flux(u_l, u_r, orientation, eps; gamma=1.4, eta_diff_t=0.0)
+
+Energy-stable numerical flux for the relaxation Euler system, normal to the
+`orientation`-th axis. The states are `SVector`s with layout `(rho, m_1, ..., m_NDIMS)`.
+
+# Mathematical Formulation
+
+Density component uses a gamma-mean interface density:
+
+    ρ_{1/2} = (γ-1)/γ · (P_r^γ - P_l^γ) / (P_r^{γ-1} - P_l^{γ-1})
+
+with P = ρ^γ, and the flux is:
+
+    F^ρ_{1/2} = ρ_{1/2} · (u_l + u_r)/2  -  (η·Δt/ε + 1) · (P_r - P_l)
+
+Normal momentum flux is upwinded via sign-split of F^ρ:
+
+    F^{ρu}_{1/2} = (F^ρ)^+ · u_l  +  (F^ρ)^- · u_r  -  ((ρu)_r - (ρu)_l)  +  (P_r - P_l)/ε
+
+Transverse momentum flux follows the same upwind pattern without the pressure term:
+
+    F^{ρv}_{1/2} = (F^ρ)^+ · v_l  +  (F^ρ)^- · v_r  -  ((ρv)_r - (ρv)_l)
+
+# Keyword Arguments
+- `gamma::Float64`: Adiabatic exponent (default 1.4).
+- `eta_diff_t::Float64`: Numerical diffusion coefficient η·Δt in the density flux
+  pressure-diffusion term (default 0.0).
+"""
+@inline function energy_stable_flux(u_l::SVector{N, TL}, 
+                                     u_r::SVector{N, TR}, 
+                                     orientation::Int, 
+                                     eps; 
+                                     gamma::Float64,
+                                     eta_diff_t::Float64) where {N, TL, TR}
+    # --- Left / right state extraction ---
+    rho_l = u_l[1]
+    rho_r = u_r[1]
+
+    P_l = rho_l^gamma
+    P_r = rho_r^gamma
+    γ = gamma
+
+    # --- Gamma-mean interface density ---
+    #   ρ_{1/2} = (γ-1)/γ · (P_r^γ - P_l^γ) / (P_r^{γ-1} - P_l^{γ-1})
+    #   Falls back to arithmetic mean when pressures are nearly equal.
+    # denom = P_r^(gamma - 1.0) - P_l^(gamma - 1.0)
+    # if abs(denom) > 1e-15 * max(P_l^(gamma - 1.0), P_r^(gamma - 1.0), 1e-15)
+    #     rho_half = (gamma - 1.0) / gamma * (P_r^gamma - P_l^gamma) / denom
+    # else
+    #     @warn "Falling back to arithmetic mean (denom is too small in γ-mean)"
+    #     rho_half = 0.5 * (rho_l + rho_r)
+    # end
+
+    # Standard arithmetic mean {{ϱ}}
+    avg = 0.5 * (rho_l + rho_r)
+    
+    # Auxiliary variables from Eq. (A.2)
+    f = (rho_r - rho_l) / (rho_r + rho_l)
+    ν = f * f
+    
+    if ν < 1e-8
+        @warn "Falling to Taylor expansion"
+        # Pre-calculate constant polynomial coefficients based on γ
+        # term1: (γ - 2) / 3
+        c1 = (γ - 2.0) / 3.0
+        
+        # term2: - (γ + 1)*(γ - 2)*(γ - 3) / 45
+        c2 = - (γ + 1.0) * (γ - 2.0) * (γ - 3.0) / 45.0
+        
+        # term3: (γ + 1)*(γ - 2)*(γ - 3)*(2γ*(γ - 2) - 9) / 945
+        c3 = (γ + 1.0) * (γ - 2.0) * (γ - 3.0) * (2.0 * γ * (γ - 2.0) - 9.0) / 945.0
+        
+        # Efficient polynomial evaluation using Horner's method: 1 + ν*(c1 + ν*(c2 + ν*c3))
+        rho_half = avg * (1.0 + ν * (c1 + ν * (c2 + ν * c3)))
+    else
+        denom = rho_r^(gamma - 1.0) - rho_l^(gamma - 1.0)
+        rho_half = (gamma - 1.0) / gamma * (rho_r^gamma - rho_l^gamma) / denom
+    end
+
+
+
+    # --- Normal velocities ---
+    vel_l = u_l[1 + orientation] / rho_l
+    vel_r = u_r[1 + orientation] / rho_r
+
+    # --- Density flux ---
+    #   F^ρ = ρ_{1/2} · (u_l + u_r)/2  -  (η·Δt/ε + 1) · (P_r - P_l)
+    # F_rho = rho_half * 0.5 * (vel_l + vel_r) - (eta_diff_t / eps + 1.0) * (P_r - P_l)
+    F_rho = rho_half * 0.5 * (vel_l + vel_r) - (eta_diff_t / eps) * (P_r - P_l) - ((rho_r - rho_l) / eps)
+
+    # --- Upwind splitting ---
+    Fp = max(F_rho, 0.0)
+    Fm = max(-F_rho, 0.0)
+
+    # --- Assemble flux vector (dimension-agnostic) ---
+    components = ntuple(N) do k
+        if k == 1
+            return F_rho
+        elseif k == 1 + orientation
+            # Normal momentum flux
+            return Fp * vel_l + Fm * vel_r - (u_r[k] - u_l[k]) + (P_r - P_l) / eps
+        else
+            # Transverse momentum flux
+            v_l = u_l[k] / rho_l
+            v_r = u_r[k] / rho_r
+            return Fp * v_l + Fm * v_r - (u_r[k] - u_l[k])
+        end
+    end
+
+    return SVector{N}(components)
+end
+
+@inline function energy_stable_flux(u_l, 
+                                    u_r, 
+                                    orientation::Int, 
+                                    eps; 
+                                    gamma::Float64,
+                                    eta_diff_t::Float64)
+
+    return energy_stable_flux(SVector(u_l), SVector(u_r), orientation, eps;
+                              gamma = gamma, eta_diff_t = eta_diff_t)
+end
+
+# =============================================================================
+# Flux Resolution
+# =============================================================================
 # Case A: User passes a built-in shortcut name (e.g., :rusanov or "rusanov")
 """
-    resolve_flux(flux_name; gamma=1.4)
+    resolve_flux(flux_name; gamma, eta=nothing)
 
 Resolve a flux specification to a `FluxPair`. Supported inputs are the symbol
-`:rusanov`, the string `"rusanov"`, a two-function tuple, or an existing
-`FluxPair`.
+`:rusanov`, the string `"rusanov"`, or a two-function tuple.
+
+The returned `FluxPair` has a mutable `dt` field (`Ref{Float64}`) that the solver
+updates at each time step. For `:energy_stable`, the flux computes
+`eta_diff_t = eta * dt` at call time.
 """
-function resolve_flux(flux_name::Symbol; gamma::Float64 = 1.4)
+function resolve_flux(flux_name::Symbol; gamma = nothing, eta = nothing)
     if flux_name === :rusanov
+        if gamma === nothing
+            error(":rusanov requires `gamma` keyword argument")
+        end
         return FluxPair((u_l, u_r, orientation, eps) -> 
                         rusanov_flux(u_l, 
                                      u_r, 
                                      orientation, 
                                      eps; 
-                                     gamma = gamma))
+                                     gamma = gamma),
+                                     Ref(0.0))
 
-    # elseif flux_name === :lax_friedrichs
-    #     return FluxPair((u_l, u_r, orientation, eps) -> 
-    #                     lax_friedrichs_flux(u_l, 
-    #                                         u_r, 
-    #                                         orientation, 
-    #                                         eps; 
-    #                                         gamma = gamma))
+    elseif flux_name === :energy_stable
+        if gamma === nothing
+            error(":energy_stable requires `gamma` keyword argument")
+        end
+        if eta === nothing
+            error(":energy_stable requires `eta` keyword argument")
+        end
+        dt_ref = Ref(0.0)
+        return FluxPair((u_l, u_r, orientation, eps) -> 
+                        energy_stable_flux(u_l, 
+                                           u_r, 
+                                           orientation, 
+                                           eps; 
+                                           gamma = gamma,
+                                           eta_diff_t = eta * dt_ref[]),
+                                           dt_ref)
 
     else
-        error("Unknown flux name ':$flux_name'. Supported built-ins are :rusanov, :lax_friedrichs")
+        error("Unknown flux name ':$flux_name'. Supported built-ins are :rusanov, :energy_stable")
     end
 end
 
 # Support strings by converting them to a symbol
-resolve_flux(flux_name::AbstractString; gamma::Float64 = 1.4) = 
-             resolve_flux(Symbol(flux_name); gamma = gamma)
+resolve_flux(flux_name::AbstractString; kwargs...) = 
+             resolve_flux(Symbol(flux_name); kwargs...)
 
 # Case B: User passes a raw 2-tuple of custom functions (e.g., (my_fx, my_fy))
 """
-    resolve_flux((flux_x, flux_y); gamma=1.4)
+    resolve_flux((flux_x, flux_y))
 
-Wrap a pair of callables as a `FluxPair`.
+Wrap a pair of callables as a `FluxPair`. These are the user defined flux functions hence dependence in γ and eta_diff_t etc. must be defined by the user in their functions.
 """
-function resolve_flux(flux_tuple::Tuple{F1, F2}; 
-                      gamma::Float64 = 1.4) where {F1, F2}
+function resolve_flux(flux_tuple::Tuple{F1, F2}) where {F1, F2}
 
     return FluxPair((u_l, u_r, orientation, eps) -> begin
         if orientation == 1
@@ -155,9 +299,9 @@ function resolve_flux(flux_tuple::Tuple{F1, F2};
         else
             return flux_tuple[2](u_l, u_r, eps)
         end
-    end)
+    end,
+    Ref(0.0))
 end
 
-# Case C: Already a FluxPair - return as-is
-# called in operators.jl in implicit_part!
-resolve_flux(flux_pair::FluxPair) = flux_pair
+# Allow calling a FluxPair directly: fp(u_l, u_r, orientation, eps)
+@inline (fp::FluxPair)(u_l, u_r, orientation, eps) = fp.flux(u_l, u_r, orientation, eps)

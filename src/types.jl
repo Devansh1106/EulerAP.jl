@@ -1,10 +1,15 @@
 """
     FluxPair{F}
 
-Container for a generic numerical flux function.
+Container for a numerical flux function pair.  The `dt` field is a mutable
+reference that allows the flux to read the current time-step size at call time.
+For built-in fluxes (`:rusanov`, `:energy_stable`) the flux functions are
+bundled inside the struct; for custom user-supplied tuples the two functions
+are stored directly.
 """
-struct FluxPair{F}
+mutable struct FluxPair{F}
     flux::F
+    dt::Ref{Float64}
 end
 
 """
@@ -38,7 +43,7 @@ end
     return cell_index(CartesianIndex(indices), p)
 end
 
-@inline function cell_coords(I::CartesianIndex{NDIMS}, 
+@inline function cell_coords(I::CartesianIndex{NDIMS},
                              p::RelaxationParams{NDIMS}) where {NDIMS}
 
     return ntuple(d -> 
