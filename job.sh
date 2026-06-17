@@ -32,4 +32,9 @@ export JULIA_PROJECT=@.
 # Run serial Julia under Slurm allocation
 # Use srun so Slurm tracks the job; this runs the script in the current working directory
 # srun julia --sysimage EulerAP.so --project=. equations/relaxation_euler2d.jl
-srun julia --project=. equations/relaxation_euler2d.jl
+# srun julia --project=equations equations/relaxation_euler1d_double_box.jl
+# srun julia --project=equations equations/relaxation_euler1d_riemann.jl
+# srun julia --project=equations equations/relaxation_euler1d_sinosidal_riemann.jl
+srun julia --project=equations equations/relaxation_euler1d_sinosidal_periodic.jl
+# srun julia --project=equations equations/relaxation_euler1d_riemann.jl
+# srun julia --project=equations equations/relaxation_euler1d_barenblatt.jl

@@ -11,6 +11,7 @@ Manifest.toml
 *.pdf
 *.jld2
 *.log
+LocalPreferences.toml
 
 # Julia cache
 .julia/
@@ -24,3 +25,4 @@ docs/build/
 out_relaxation/
 err_relaxation/
 plots/
+data/

@@ -1,13 +1,23 @@
+authors = ["kralab1 "]
 name = "EulerAP"
 uuid = "33cb0100-9f26-4552-a1b4-6beac47b6cec"
 version = "0.1.0"
-authors = ["kralab1 "]
 
-[workspace]
-projects = ["test", "docs"]
+[compat]
+ForwardDiff = "1.3.3"
+HDF5 = "0.17.3"
+LinearSolve = "3.80.0"
+NonlinearSolve = "4.19.1"
+PackageCompiler = "2.3.0"
+Pardiso = "1.1.2"
+Plots = "1.41.6"
+RecipesBase = "1.3.4"
+SparseArrays = "1.12.0"
+StaticArrays = "1.9.15"
 
 [deps]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
@@ -17,13 +27,8 @@ RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
-[compat]
-ForwardDiff = "1.3.3"
-LinearSolve = "3.80.0"
-NonlinearSolve = "4.19.1"
-PackageCompiler = "2.3.0"
-Pardiso = "1.1.2"
-Plots = "1.41.6"
-RecipesBase = "1.3.4"
-SparseArrays = "1.12.0"
-StaticArrays = "1.9.15"
+[extras]
+MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
+
+[workspace]
+projects = ["test", "docs", "equations"]

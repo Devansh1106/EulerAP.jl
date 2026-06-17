@@ -185,3 +185,21 @@ julia --project=. relaxation_euler2d.jl
   3rd edition, Springer, 2009.
 
 # EulerAP.jl
+
+Energy-stable-flux:
+$$
+\begin{aligned}
+% Complete Vector
+\vec{F}_{i+1/2} &= \begin{pmatrix} F_{i+1/2}^\rho \\ F_{i+1/2}^{\rho u} \\ F_{i+1/2}^{\rho v} \end{pmatrix} \\
+
+% Density Component & Gamma-mean
+F_{i+1/2}^\rho &= \rho_{i+1/2} \frac{(u_i + u_{i+1})}{2} - \frac{\eta \Delta t}{\varepsilon} (P_{i+1} - P_i) - (P_{i+1} - P_i), \quad \eta > 0 \\
+\rho_{i+1/2} &= \frac{\gamma - 1}{\gamma} \left( \frac{P_{i+1}^\gamma - P_i^\gamma}{P_{i+1}^{\gamma-1} - P_i^{\gamma-1}} \right) \\
+
+% X-Momentum
+F_{i+1/2}^{\rho u} &= \left(F_{i+1/2}^\rho\right)^+ u_i + \left(F_{i+1/2}^\rho\right)^- u_{i+1} - \left( (\rho u)_{i+1} - (\rho u)_i \right) + \frac{P_{i+1} - P_i}{\epsilon} \\
+
+% Y-Momentum
+F_{i+1/2}^{\rho v} &= \left(F_{i+1/2}^\rho\right)^+ v_i + \left(F_{i+1/2}^\rho\right)^- v_{i+1} - \left( (\rho v)_{i+1} - (\rho v)_i \right)
+\end{aligned}
+$$
