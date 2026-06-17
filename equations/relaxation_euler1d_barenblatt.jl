@@ -2,7 +2,7 @@ using EulerAP
 # using Plots
 # using FiniteDifferences
 
-tspan = (1.0, 2.0)
+tspan = (1.0, 1.2)
 tol   = 1e-8
 gamma = 3.0
 eps   = 1e-4
@@ -30,7 +30,7 @@ end
 
 function initial_u(x::Real, t::Real, Γ::Real, γ::Real)
     ρ = barenblatt(x, t, Γ, γ)
-    β = 1.0 / (gamma + 1.0)
+    β = 1.0 / (γ + 1.0)
 
     if ρ > 0.0
         u = β * x / t
@@ -39,18 +39,26 @@ function initial_u(x::Real, t::Real, Γ::Real, γ::Real)
         # In the vacuum region, keep momentum zero.
         mx = 0.0
     end
-    return -mx
+    return mx
 end
 
-function initial_condition_barenblatt(x,t)
+function initial_condition_barenblatt(x, t)
+    gamma = 3.0
     ρ = barenblatt(x, t, 1.0, gamma)
     ρ = max(ρ, RHO_FLOOR)  # density floor to prevent vacuum
     mx = initial_u(x, t, 1.0, gamma)
     return ρ, mx
 end
 
+# function initial_condition_barenblatt(x,t)
+#     ρ = barenblatt(x, t, 1.0, gamma)
+#     ρ = max(ρ, RHO_FLOOR)  # density floor to prevent vacuum
+#     mx = initial_mx(x, t, 1.0, gamma)
+#     return ρ, mx
+# end
+
 u0, coords, p, jac_cache = build_problem(
-    size        = (100,),
+    size        = (1000,),
     eps         = eps,
     domain_min  = (-6.0,),
     domain_max  = (6.0,),
@@ -75,8 +83,6 @@ u_final, solve_stats, nsteps_done =
         jac_cache;
         dt    = minimum(p.dx),
         tol   = tol,
-        flux  = :rusanov,
-        gamma = gamma
     )
 
 println("Solved 1D relaxation Euler system (MKL)")

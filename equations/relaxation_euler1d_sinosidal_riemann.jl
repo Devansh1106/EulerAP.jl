@@ -1,41 +1,44 @@
 using EulerAP
 # using Plots
 
-tspan = (0.0, 0.5)
-tol = 1e-8
+tspan = (0.0, 0.01)
+tol   = 1e-8
 gamma = 3.0
-eps = 1.0
+eps   = 1e-7
+eta   = 10.0
 
-
-# Boundary condition choices: :periodic, :dirichlet, :neumann
-left_bc   = :extrapolate
-right_bc  = :extrapolate
-bottom_bc = :extrapolate
-top_bc    = :extrapolate
-
-function initial_condition_riemann_2d(x, y, t)
-    r = sqrt(x^2 + y^2)
-
-    rho0 = r < 0.5 ? 1.0 : 0.125
-    ux0 = 0.0
-    uy0 = 0.0
-    return rho0, rho0 * ux0, rho0 * uy0
+function initial_condition_sinosidal(x, t)
+    if -5 <= x < -1
+        rho = 2.0
+    elseif -1 <= x < 1
+        rho = 0.5 * (3.0 + sin(3.0 * π * x / 2.0))
+    elseif 1 <= x <= 5
+        rho = 1.0
+    else
+        throw(DomainError(x, "x must be in the range [-5, 5]"))
+    end
+    
+    u = 0.0
+    return rho, u
 end
 
+left_bc   = :extrapolate
+right_bc  = :extrapolate
+
+
 u0, coords, p, jac_cache = build_problem(
-    size        = (100, 100),
+    size        = (100,),
     eps         = eps,
-    domain_min  = (-1.0, -1.0),
-    domain_max  = (1.0, 1.0),
+    domain_min  = (-5.0,),
+    domain_max  = (5.0,),
     left_bc     = left_bc,
     right_bc    = right_bc,
-    bottom_bc   = bottom_bc,
-    top_bc      = top_bc,
     # bc_funcs    = bc_funcs,
-    ic_func     = initial_condition_riemann_2d,
+    ic_func     = initial_condition_sinosidal,
     tspan       = tspan,
     flux        = :rusanov,
     gamma       = gamma,
+    eta         = eta
 )
 
 u_init = copy(u0)
@@ -46,24 +49,21 @@ u_final, solve_stats, nsteps_done =
         p,
         tspan,
         jac_cache;
-        dt = minimum(p.dx),
-        tol = tol,
+        dt    = minimum(p.dx),
+        tol   = tol,
     )
 
 _ncells = prod(p.size)
 
-println("Solved 2D relaxation Euler system (MKL)")
+println("Solved 1D relaxation Euler system (MKL)")
 println("Final time = ", tspan[2])
 
 rho_final = @view u_final[1:_ncells]
 mx_final  = @view u_final[_ncells + 1:2 * _ncells]
-my_final  = @view u_final[2 * _ncells + 1:3 * _ncells]
 ux_final  = mx_final ./ rho_final
-uy_final  = my_final ./ rho_final
 
 println("Mean density = ", sum(rho_final) / _ncells)
 println("Mean ux      = ", sum(ux_final) / _ncells)
-println("Mean uy      = ", sum(uy_final) / _ncells)
 
 print_run_stats("Solve", 
                 solve_stats, 
@@ -73,18 +73,17 @@ print_run_stats("Solve",
 
 n_threads = get(ENV, "MKL_NUM_THREADS", string(Threads.nthreads()))
 
-sol = sol2D(coords[1], 
-            coords[2], 
+sol = sol1D(coords[1], 
             u_init, 
             u_final, 
             _ncells)
 
-save_solution_h5(sol, p; t_final = tspan[2])
+save_solution_h5(sol, p ; t_final = tspan[2])
 
 # figures = plot(sol, 
-#                size=(1400, 450), 
-#                plot_title="2D sol $(p.size) & $(p.eps)")
+#                size=(1400, 550), 
+#                plot_title="1D sol $(p.size) & $(p.eps)")
 
 # mkpath("plots") 
-# savefig(figures, "plots/sol2D_$(p.size[1]).png")
-# println("Solution is saved in plots/sol2D_$(p.size[1]).png")
+# savefig(figures, "plots/sol1D_$(p.size[1])_$(p.eps).png")
+# println("Solution is saved in plots/sol1D_$(p.size[1])_$(p.eps).png")

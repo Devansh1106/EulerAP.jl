@@ -1,19 +1,20 @@
 using EulerAP
 # using Plots
 
-tspan = (0.0, 0.01)
+# This initial condition does not seem to work currently. We may need to update flux for it to work probably 
+# since all other conditions are working.
+
+tspan = (0.0, 0.3)
 tol   = 1e-8
-gamma = 2.0
-eps   = 1e-5
-eta   = 10.0
+gamma = 3.0
+eps   = 1e-4
 
-const rho_L = 2.0
-const rho_R = 1.0
-const x_m   = 0.0
+eta = 10
 
-function initial_condition_riemann(x, t)
-    rho0 = x < x_m ? rho_L : rho_R
-    return rho0, 0.0
+function initial_condition_sinosidal(x, t)
+    rho = 1.0 + 0.2 * sin(8.0 * π * x)
+    u   = -0.2 * π * sin(8.0 * π * x)
+    return rho, u
 end
 
 left_bc   = :periodic
@@ -23,12 +24,12 @@ right_bc  = :periodic
 u0, coords, p, jac_cache = build_problem(
     size        = (100,),
     eps         = eps,
-    domain_min  = (-5.0,),
-    domain_max  = (5.0,),
+    domain_min  = (-1.0,),
+    domain_max  = (1.0,),
     left_bc     = left_bc,
     right_bc    = right_bc,
     # bc_funcs    = bc_funcs,
-    ic_func     = initial_condition_riemann,
+    ic_func     = initial_condition_sinosidal,
     tspan       = tspan,
     flux        = :energy_stable,
     gamma       = gamma,
