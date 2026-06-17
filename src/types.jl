@@ -1,36 +1,64 @@
 """
-    FluxPair{FX,FY}
+    FluxPair{F}
 
-Container for a pair of numerical flux functions. `flux_x` is used for
-vertical interfaces and `flux_y` is used for horizontal interfaces.
+Container for a numerical flux function pair.  The `dt` field is a mutable
+reference that allows the flux to read the current time-step size at call time.
+For built-in fluxes (`:rusanov`, `:energy_stable`) the flux functions are
+bundled inside the struct; for custom user-supplied tuples the two functions
+are stored directly.
 """
-struct FluxPair{FX,FY}
-    flux_x::FX
-    flux_y::FY
+mutable struct FluxPair{F}
+    flux::F
+    dt::Ref{Float64}
 end
 
-
 """
-    RelaxationParams
+    RelaxationParams{NDIMS,BC}
 
-Model and grid parameters for the 2D relaxation-Euler problem.
+Model and grid parameters for the relaxation-Euler problem in `NDIMS`
+spatial dimensions.
 """
-struct RelaxationParams
+struct RelaxationParams{NDIMS, BC}
     eps::Float64
-    nx::Int
-    ny::Int
-    dx::Float64
-    dy::Float64
-    xmin::Float64
-    xmax::Float64
-    ymin::Float64
-    ymax::Float64
-    bc_config::Any  # BCConfig (defined in boundary_conditions.jl)
+    size::NTuple{NDIMS, Int}
+    dx::NTuple{NDIMS, Float64}
+    domain_min::NTuple{NDIMS, Float64}
+    domain_max::NTuple{NDIMS, Float64}
+    bc_config::BC  # BCConfig (defined in boundary_conditions.jl)
 end
 
-@inline function cell_index(i, j, p::RelaxationParams)
-    return (j - 1) * p.nx + i
+@inline ndims(p::RelaxationParams{NDIMS}) where {NDIMS} = NDIMS
+@inline nvars(p::RelaxationParams{NDIMS}) where {NDIMS} = NDIMS + 1
+@inline ncells(p::RelaxationParams)                     = prod(p.size)
+
+@inline function cell_index(I::CartesianIndex{NDIMS}, 
+                            p::RelaxationParams{NDIMS}) where {NDIMS}
+
+    return LinearIndices(p.size)[I]
 end
+
+@inline function cell_index(p::RelaxationParams{NDIMS}, 
+                            indices::Vararg{Int, NDIMS}) where {NDIMS}
+
+    return cell_index(CartesianIndex(indices), p)
+end
+
+@inline function cell_coords(I::CartesianIndex{NDIMS},
+                             p::RelaxationParams{NDIMS}) where {NDIMS}
+
+    return ntuple(d -> 
+                  p.domain_min[d] + (Tuple(I)[d] - 0.5) * p.dx[d], 
+                  NDIMS)
+end
+
+# For 2D
+@inline cell_index(i::Int, 
+                   j::Int, 
+                   p::RelaxationParams{2}) = cell_index(CartesianIndex(i, j), p)
+
+# For 1D
+@inline cell_index(i::Int, 
+                   p::RelaxationParams{1}) = cell_index(CartesianIndex(i), p)
 
 """
     ImplicitStepData
@@ -38,12 +66,12 @@ end
 Mutable container passed through the nonlinear solver for one backward-Euler
 step.
 """
-mutable struct ImplicitStepData
-    model::RelaxationParams
+mutable struct ImplicitStepData{M, F}
+    model::M
     dt::Float64
     t::Float64
     u_prev::Vector{Float64}
-    flux::FluxPair
+    flux::F
 end
 
 """

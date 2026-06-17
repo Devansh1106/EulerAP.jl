@@ -11,6 +11,7 @@ Manifest.toml
 *.pdf
 *.jld2
 *.log
+LocalPreferences.toml
 
 # Julia cache
 .julia/
@@ -18,8 +19,10 @@ docs/build/
 
 # VSCode
 .vscode/
+.DS_Store
 
 # HPC outputs
 out_relaxation/
 err_relaxation/
 plots/
+data/
