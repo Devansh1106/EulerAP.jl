@@ -18,7 +18,7 @@ The isentropic Euler equations
 in one space dimension with polytropic pressure law ``p(\rho) = \rho^\gamma`` augmented with stiff friction term and diffusive scaling. Here ``\rho`` is the density, ``m`` is the velocity and ``p`` is the pressure (as a function of density).
 """
 struct RelaxationEulerEquations1D{RealT <: Real} <: 
-       AbstractRelaxationEulerEquations{1, 3}
+       AbstractRelaxationEulerEquations{1, 2}
     gamma::RealT        
     epsilon::RealT      # Scaling parameter
     inv_epsilon::RealT  # = inv(epsilon); preferring fast multiplication instead of slow division
@@ -45,6 +45,38 @@ function initial_condition_riemann(x, t, equations::RelaxationEulerEquations1D)
     rho_r = RealT(0.5)
     rho = x[1] <= RealT(0.5) ? rho_l : rho_r
     return SVector(rho, zero(RealT))    
+end
+
+# orientation = 1 for the x-axis
+#               2 for the y-axis
+# TODO: add a similar 2D version in 2D file
+@inline function flux(u::SVector{2}, orientation, 
+                      equations::RelaxationEulerEquations1D)
+
+    rho = u[1]
+    m   = u[2]
+
+    v = m / rho
+    p = rho^equations.gamma
+
+    return SVector(m, 
+                   m*v + p*equations.inv_epsilon)
+end
+
+@inline function max_abs_speed(u::SVector{2}, orientation, 
+                               equations::RelaxationEulerEquations1D)
+
+    @assert orientation == 1
+
+    rho = u[1]
+    rho <= 0 && error("Negative density: rho = $rho")
+
+    normal_momentum = u[1 + orientation] # essentially u[2] for 1D
+    velocity = normal_momentum / rho
+    alpha = sqrt(equations.gamma * rho^(equations.gamma - 1)) # sqrt(γ * ρ^(γ-1))
+
+    c = sqrt(equations.inv_epsilon)
+    return abs(velocity) + alpha * c
 end
 
 

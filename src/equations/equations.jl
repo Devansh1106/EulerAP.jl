@@ -1,0 +1,34 @@
+# By default, Julia/LLVM does not use fused multiply-add operations (FMAs).
+# Since these FMAs can increase the performance of many numerical algorithms,
+# we need to opt-in explicitly.
+# See https://ranocha.de/blog/Optimizing_EC_Trixi for further details.
+@muladd begin
+#! format: noindent
+
+# Retrieve number of variables from equation instance
+@inline nvariables(::AbstractEquations{NDIMS, NVARS}) where {NDIMS, NVARS} = NVARS
+
+####################################################################################################
+# Include files with actual implementations for different systems of equations.
+
+# Numerical flux formulations that are independent of the specific system of equations
+include("./numerical_fluxes.jl")
+
+# Relaxation Euler system with pressure law = ρ^γ
+abstract type AbstractRelaxationEulerEquations{NDIMS, NVARS} <: 
+              AbstractEquations{NDIMS, NVARS} end
+
+include("relaxation_euler_1d.jl")
+include("relaxation_euler_2d.jl")
+
+# Euler Poisson Boltzmann
+abstract type AbstractEulerPoissonBoltzmann{NDIMS, NVARS} <: 
+              AbstractEquations{NDIMS, NVARS} end
+
+include("euler_poisson_boltzmann_pressure_less_1d.jl")
+include("euler_poisson_boltzmann_pressure_less_2d.jl")
+
+
+
+
+end # @muladd

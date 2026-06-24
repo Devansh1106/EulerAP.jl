@@ -14,10 +14,10 @@ Different number of cells per dimension are possible.
 """
 struct CartesianMesh{NDIMS, RealT <: Real} <: AbstractMesh{NDIMS}
     cells_per_dimension::NTuple{NDIMS, Int}
-    periodicity        ::NTuple{NDIMS, Bool}
     coordinates_min    ::NTuple{NDIMS, RealT}   # min coordinate of each dimension
     coordinates_max    ::NTuple{NDIMS, RealT}   # max coordinate of each dimension
     dx                 ::NTuple{NDIMS, RealT}
+    periodicity        ::NTuple{NDIMS, Bool}
 end
 
 """
@@ -71,5 +71,28 @@ function Base.show(io::IO, mesh::CartesianMesh)
     return nothing
 end
 
+@inline ncells(mesh::CartesianMesh) = prod(size(mesh))
+
+@inline eachcell(mesh::CartesianMesh{1}) = CartesianIndices((size(mesh, 1),))
+
+@inline eachcell(mesh::CartesianMesh{2}) = CartesianIndices(size(mesh))
+
+@inline cell_index(I::CartesianIndex,
+                   semi::AbstractSemidiscretization) = cell_index(I, semi.mesh)
+
+@inline cell_index(I::CartesianIndex{1}, mesh::CartesianMesh{1}) = I[1]
+
+@inline function cell_index(I::CartesianIndex{2}, mesh::CartesianMesh{2})
+    i, j = Tuple(I)
+    return i + (j - 1) * size(mesh, 1)
+end
+
+"""
+    minimum_cell_size(mesh)
+
+Return the smallest mesh spacing.
+"""
+@inline minimum_cell_size(mesh::CartesianMesh{NDIMS}) where {NDIMS} =
+    minimum(mesh.dx)
 
 end # @muladd
