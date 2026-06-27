@@ -19,7 +19,7 @@ struct EulerAPSolution{TU,T}
     t::T
 end
 
-mutable struct FVCache{TJacobian, TPosition, TX, TY, TJlocal, TConfig, TResidual, TResidualBuffer}
+mutable struct FVCache{TJacobian, TPosition, TX, TY, TJlocal, TResidualBuffer}
     # Jacobian infrastructure
     jac_prototype::TJacobian
     positions::TPosition
@@ -28,8 +28,8 @@ mutable struct FVCache{TJacobian, TPosition, TX, TY, TJlocal, TConfig, TResidual
     x_cache::TX
     y_cache::TY
     J_local_cache::TJlocal
-    config::TConfig
-    local_residual!::TResidual
+    config::Union{Nothing, ForwardDiff.JacobianConfig}
+    local_residual!::Union{Nothing, Function}
     residual_buffer::TResidualBuffer
 end
 
@@ -39,21 +39,27 @@ function create_cache(mesh::AbstractMesh,
 
     nvars = nvariables(equations)
     local_stencil = 2 * ndims(mesh) + 1
+    ncells = ndofs(mesh)
+    n = ncells * nvars
     T = eltype(mesh.dx)
 
-    # These are created here since they are probably needed for explicit methods when
-    # `jac_prototype = false`. TODO: Explicit methods maybe coded in future.
     x_cache = zeros(T, local_stencil * nvars)
-
     residual_buffer = zeros(T, nvars)
 
-    return FVCache(nothing, # jac_prototype
-                   nothing, # positions
-                   x_cache, # x_cache
-                   nothing, # y_cache
-                   nothing, # J_local_cache
-                   nothing, # config
-                   nothing, # local_residual!
+    # Pre-allocate with proper types so FVCache type parameters are not locked to `Nothing`.
+    # These will be properly filled in `build_jacobian_cache!` when Jacobian is needed.
+    jac_prototype = spzeros(T, n, n)
+    positions = zeros(Int, nvars, local_stencil * nvars, ncells)
+    y_cache = zeros(T, nvars)
+    J_local_cache = zeros(T, nvars, local_stencil * nvars)
+
+    return FVCache(jac_prototype, # jac_prototype
+                   positions,     # positions
+                   x_cache,       # x_cache
+                   y_cache,       # y_cache
+                   J_local_cache, # J_local_cache
+                   nothing,       # config
+                   nothing,       # local_residual!
                    residual_buffer) # residual_buffer
 end
 

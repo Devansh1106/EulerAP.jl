@@ -5,13 +5,6 @@
 @muladd begin
 #! format: noindent
 
-"""
-    stencil_size(semi::AbstractSemidiscretization)
-
-Returns size of the local stencil for Finite Volume 1D solver.
-"""
-@inline stencil_size(semi::AbstractSemidiscretization) = 2 * ndims(semi.mesh) + 1
-
 @inline function stencil_indices(I::CartesianIndex{1},
                                  semi::AbstractSemidiscretization)
 
@@ -97,7 +90,7 @@ end
 end
 
 function rhs!(du, u,
-              solver::FiniteVolumeSolver{1, TFlux},
+              solver::FVSolver{1, TFlux},
               semi::SemidiscretizationHyperbolic,
               t) where {TFlux}
 
@@ -220,8 +213,7 @@ end
 
     if source_terms !== nothing
         src = source_terms(u_center,
-                           equations,
-                           source_term)
+                           equations)
 
         @inbounds for v in eachindex(y)
             y[v] += src[v]

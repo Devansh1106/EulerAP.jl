@@ -5,13 +5,6 @@
 @muladd begin
 #! format: noindent
 
-"""
-    stencil_size(semi::AbstractSemidiscretization)
-
-Returns size of the local stencil for Finite Volume 1D solver.
-"""
-@inline stencil_size(semi::AbstractSemidiscretization) = 2 * ndims(semi.mesh) + 1
-
 @inline function stencil_indices(I::CartesianIndex{2},
                                  semi::AbstractSemidiscretization)
 

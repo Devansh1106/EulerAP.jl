@@ -12,6 +12,7 @@ using NonlinearSolve
 using LinearSolve
 using Pardiso
 
+using MuladdMacro
 using HDF5
 using RecipesBase
 
@@ -25,12 +26,12 @@ include("meshes/cartesian_mesh.jl")
 
 include("equations/equations.jl")
 
+include("semidiscretization/semidiscretization_hyperbolic.jl")
+include("semidiscretization/semidiscretization.jl")
+
 include("solvers/solvers.jl")
 include("solvers/fv_1d.jl")
 include("solvers/fv_2d.jl")
-
-include("semidiscretization/semidiscretization.jl")
-include("semidiscretization/semidiscretization_hyperbolic.jl")
 
 # --------------------------------------------------
 # Time integration
@@ -43,13 +44,23 @@ include("time_integration/backward_euler.jl")
 # IO
 # --------------------------------------------------
 
-include("io/save_solution.jl")
+include("../io/save_solution.jl")
+include("../io/save_initial_condition.jl")
 
 # --------------------------------------------------
 # Plotting
 # --------------------------------------------------
 
 include("visualization/recipes.jl")
+
+# --------------------------------------------------
+# Postprocessing
+# --------------------------------------------------
+
+include("postprocessing/analysis.jl")
+include("postprocessing/norms.jl")
+include("postprocessing/errors.jl")
+include("postprocessing/convergence.jl")
 
 # --------------------------------------------------
 # Exports
@@ -85,7 +96,21 @@ export ImplicitEulerCustom
 # Solutions
 export EulerAPSolution
 
-# IO
+# Equations IO
 export save_solution
+export save_initial_condition
+
+# Initial conditions & source terms
+export initial_condition_riemann
+export initial_condition_single_box
+export initial_condition_double_box
+export initial_condition_sinosidal
+export initial_condition_sinosidal_riemann
+export initial_condition_barenblatt
+export source_terms
+
+# Postprocessing
+export compute_errors
+export convergence_table
 
 end # module EulerAP

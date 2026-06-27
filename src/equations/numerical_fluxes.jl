@@ -16,7 +16,7 @@ struct FluxRusanov end
 
 Rusanov numerical flux for a face normal to the `orientation`-th axis.
 """
-@inline function (flux::FluxRusanov)(u_ll, u_rr, orientation, equations::AbstractEquations)
+@inline function (FluxRusanov::FluxRusanov)(u_ll, u_rr, orientation, equations::AbstractEquations)
 
     # Defined in speific equations/ files
     flux_ll = flux(u_ll,

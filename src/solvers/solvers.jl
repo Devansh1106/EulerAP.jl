@@ -18,4 +18,12 @@ function FVSolver(; flux, ndims::Int)
     )
 end
 
+
+"""
+    stencil_size(semi::AbstractSemidiscretization)
+
+Returns size of the local stencil for Finite Volume 1D solver.
+"""
+@inline stencil_size(semi::AbstractSemidiscretization) = 2 * ndims(semi.mesh) + 1
+
 end # @muladd

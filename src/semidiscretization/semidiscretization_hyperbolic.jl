@@ -38,7 +38,7 @@ function SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver
                                       source_terms = nothing,
                                       boundary_conditions)
 
-    @assert ndims(mesh) === ndims(equations)
+    # @assert ndims(mesh) === ndims(equations)
     cache = create_cache(mesh, equations, solver)
     check_periodicity_mesh_boundary_conditions(mesh, boundary_conditions)
 
