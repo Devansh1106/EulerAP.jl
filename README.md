@@ -13,13 +13,13 @@ densities. The PDE in dimensional form used in the code is
 $$
 \begin{aligned}
 \rho_t + \partial_x m_x + \partial_y m_y &= 0, \\
-m_{x,t} + \partial_x\left(\frac{m_x^2}{\rho}+\frac{\rho}{\varepsilon}\right) + \partial_y\left(\frac{m_x m_y}{\rho}\right) &= -\frac{m_x}{\varepsilon}, \\
-m_{y,t} + \partial_x\left(\frac{m_x m_y}{\rho}\right) + \partial_y\left(\frac{m_y^2}{\rho}+\frac{\rho}{\varepsilon}\right) &= -\frac{m_y}{\varepsilon}.
+m_{x,t} + \partial_x\left(\frac{m_x^2}{\rho}+\frac{\rho^\gamma}{\varepsilon}\right) + \partial_y\left(\frac{m_x m_y}{\rho}\right) &= -\frac{m_x}{\varepsilon}, \\
+m_{y,t} + \partial_x\left(\frac{m_x m_y}{\rho}\right) + \partial_y\left(\frac{m_y^2}{\rho}+\frac{\rho^\gamma}{\varepsilon}\right) &= -\frac{m_y}{\varepsilon}.
 \end{aligned}
 $$
 
 Here $\varepsilon$ is the relaxation parameter (named `eps` in the code). As
-$\varepsilon\to 0$ the pressure term $\rho/\varepsilon$ becomes stiff and the
+$\varepsilon\to 0$ the pressure term $\rho^\gamma/\varepsilon$ becomes stiff and the
 right-hand-side relaxation terms become dominant — motivating implicit
 treatment of the stiff terms.
 

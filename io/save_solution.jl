@@ -18,11 +18,20 @@ function save_solution(sol,
     equations = semi.equations
 
     nvars = nvariables(equations)
+    nd    = ndims(mesh)
 
     u = solution_vector(sol)
     time = solution_time(sol)
 
     h5open(filename, "w") do file
+
+        # --------------------------------------------------
+        # Convenience top-level scalars
+        # --------------------------------------------------
+
+        file["eps"] = equations.epsilon
+        mesh_str = join(mesh.cells_per_dimension, "x")
+        file["ncells"] = mesh_str
 
         # --------------------------------------------------
         # Mesh
@@ -56,10 +65,18 @@ function save_solution(sol,
             sol.t[end]
 
         metadata_group["ndims"] =
-            ndims(mesh)
+            nd
 
         metadata_group["nvariables"] =
             nvars
+
+        # --------------------------------------------------
+        # Equation parameters
+        # --------------------------------------------------
+
+        equations_group = create_group(file, "equations")
+        equations_group["gamma"] = equations.gamma
+        equations_group["epsilon"] = equations.epsilon
 
         # --------------------------------------------------
         # Solution

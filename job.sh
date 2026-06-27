@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=relaxation_serial
-#SBATCH --output=out_relaxation/out_%j.out
-#SBATCH --error=err_relaxation_%j.log
+#SBATCH --output=out/out_%j.out
+#SBATCH --error=err%j.log
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
@@ -35,6 +35,7 @@ export JULIA_PROJECT=@.
 # srun julia --project=equations equations/relaxation_euler1d_double_box.jl
 # srun julia --project=equations equations/relaxation_euler1d_riemann.jl
 # srun julia --project=equations equations/relaxation_euler1d_sinosidal_riemann.jl
-srun julia --project=equations equations/relaxation_euler1d_sinosidal_periodic.jl
+# srun julia --project=. examples/relaxation_euler_1d/relaxation_euler_1d_sinosidal_riemann.jl
+srun julia --project=. examples/relaxation_euler_1d/relaxation_euler_1d_barenblatt.jl
 # srun julia --project=equations equations/relaxation_euler1d_riemann.jl
 # srun julia --project=equations equations/relaxation_euler1d_barenblatt.jl
