@@ -355,4 +355,23 @@ function initial_condition(t,
     return u0
 end
 
+@inline semi(context::CallbackContext) = context.simulation.semi
+
+# ============================================================================
+# Display
+# ============================================================================
+
+@inline Base.show(io::IO, ::SemidiscretizationHyperbolic) = print(io, "Hyperbolic semidiscretization")
+# ============================================================================
+# Display
+# ============================================================================
+
+@inline Base.show(io::IO, ::PeriodicBC) = print(io, "Periodic")
+
+@inline Base.show(io::IO, ::DirichletBC) = print(io, "Dirichlet")
+
+@inline Base.show(io::IO, ::NeumannBC) = print(io, "Neumann")
+
+@inline Base.show(io::IO, ::ExtrapolateBC) = print(io, "Extrapolation")
+
 end # @muladd

@@ -25,25 +25,30 @@ struct ImplicitEulerCustom <: AbstractTimeIntegrator end
           ::ImplicitEulerCustom;
           dt = minimum_cell_size(semi.mesh.dx),
           abstol = 1e-8,
-          reltol = 1e-8)
+          reltol = 1e-8,
+          callback=CallbackSet())
 
 Advance the semidiscretization using a custom
 Backward Euler time integrator.
 """
 function solve(semi,
                tspan,
-               ::ImplicitEulerCustom;
+               integrator::ImplicitEulerCustom;
                dt = minimum_cell_size(semi.mesh),
                abstol = 1e-8,
-               reltol = 1e-8)
+               reltol = 1e-8,
+               callbacks=CallbackSet())
 
-    return solve_implicit_euler(
-        semi,
-        tspan;
-        dt = dt,
-        abstol = abstol,
-        reltol = reltol
-    )
+    return solve_implicit_euler(semi,
+                                integrator,
+                                tspan;
+                                dt = dt,
+                                abstol = abstol,
+                                reltol = reltol,
+                                callbacks=callbacks)
 end
+
+# Used in Callbacks
+@inline integrator(context::CallbackContext) = context.simulation.integrator
 
 end # @muladd

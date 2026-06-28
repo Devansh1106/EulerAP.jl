@@ -37,7 +37,7 @@ Stores error norms for every conserved variable.
 errors[v] contains the norms corresponding to conserved variable `v`.
 """
 struct AnalysisResult{T}
-    errors::Vector{ErrorNorms{T}}
+    norms::Vector{ErrorNorms{T}}
 end
 
 end # @muladd

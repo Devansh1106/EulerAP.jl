@@ -22,6 +22,7 @@ function save_solution(sol,
 
     u = solution_vector(sol)
     time = solution_time(sol)
+    mkpath(dirname(filename))
 
     h5open(filename, "w") do file
 

@@ -10,7 +10,8 @@
                    semi;
                    exact_solution)
 
-Compute discrete error norms for every conserved variable.
+Compute the discrete L¹, L² and L∞ error norms for every conserved
+variable.
 """
 function compute_errors(solution,
                         semi;
@@ -25,50 +26,47 @@ function compute_errors(solution,
 
     cell_volume = prod(mesh.dx)
 
-    accumulators = [
-        ErrorAccumulator(T)
-        for _ in 1:nvars
-    ]
+    accumulators = Vector{ErrorAccumulator{T}}(undef, nvars)
+
+    @inbounds for v in 1:nvars
+        accumulators[v] = ErrorAccumulator(T)
+    end
 
     for I in eachcell(mesh)
 
         x = coordinates(I, mesh)
 
-        numerical =
-            extract_cell_state(
-                solution.u,
-                I,
-                semi
-            )
+        numerical = extract_cell_state(
+            solution.u,
+            I,
+            semi
+        )
 
-        exact =
-            exact_solution(
-                x,
-                solution.t,
-                equations
-            )
+        exact = exact_solution(
+            x,
+            solution.t,
+            equations
+        )
 
         @inbounds for v in 1:nvars
-
             accumulate!(
                 accumulators[v],
                 numerical[v] - exact[v]
             )
-
         end
 
     end
 
-    errors = Vector{ErrorNorms{T}}(undef, nvars)
+    norms = Vector{ErrorNorms{T}}(undef, nvars)
 
     @inbounds for v in 1:nvars
-        errors[v] = finish(
+        norms[v] = finish(
             accumulators[v],
             cell_volume
         )
     end
 
-    return AnalysisResult(errors)
+    return AnalysisResult(norms)
 end
 
 end # @muladd

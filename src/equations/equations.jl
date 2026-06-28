@@ -8,6 +8,16 @@
 # Retrieve number of variables from equation instance
 @inline nvariables(::AbstractEquations{NDIMS, NVARS}) where {NDIMS, NVARS} = NVARS
 
+# Used for Callbacks
+@inline equations(context::CallbackContext) = semi(context).equations
+
+# ============================================================================
+# Display
+# ============================================================================
+@inline Base.show(io::IO, ::RelaxationEulerEquations1D) = print(io, "Relaxation Euler equations (1D)")
+
+@inline Base.show(io::IO, ::RelaxationEulerEquations2D) = print(io, "Relaxation Euler equations (2D)")
+
 ####################################################################################################
 # Include files with actual implementations for different systems of equations.
 

@@ -37,7 +37,7 @@ function convergence_table(cells,
 
     for (i, N) in enumerate(cells)
 
-        norms = results[i].errors[variable]
+        norms = results[i].norms[variable]
 
         if previous === nothing
 

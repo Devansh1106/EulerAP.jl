@@ -26,4 +26,18 @@ Returns size of the local stencil for Finite Volume 1D solver.
 """
 @inline stencil_size(semi::AbstractSemidiscretization) = 2 * ndims(semi.mesh) + 1
 
+# Used on Callbacks
+@inline solver(context::CallbackContext) = semi(context).solver
+
+# ============================================================================
+# Display
+# ============================================================================
+
+@inline Base.show(io::IO, ::FVSolver) = print(io, "Finite Volume")
+
+@inline Base.show(io::IO, ::FluxRusanov) = print(io, "Rusanov")
+
+@inline Base.show(io::IO, ::FluxEnergyStable) = print(io, "Energy Stable")
+
+
 end # @muladd

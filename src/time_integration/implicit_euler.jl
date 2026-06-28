@@ -86,10 +86,12 @@ function backward_euler_step!(u,
 end
 
 function solve_implicit_euler(semi::AbstractSemidiscretization,
+                              integrator::ImplicitEulerCustom,
                               tspan;
                               dt,
                               abstol = 1e-8,
-                              reltol = 1e-8)
+                              reltol = 1e-8,
+                              callbacks = CallbackSet())
 
     # Build Jacobian cache if not yet initialized (e.g. when called directly via
     # solve(semi, tspan, ImplicitEulerCustom()) instead of semidiscretize(...; jac_prototype=true))
@@ -100,19 +102,56 @@ function solve_implicit_euler(semi::AbstractSemidiscretization,
     t = first(tspan)
     u = initial_condition(t, semi)
 
+    iteration = 0
+
+    # --------------------------------------------------
+    # Callback infrastructure
+    # --------------------------------------------------
+
+    simulation = Simulation(semi,
+                            integrator,
+                            tspan,
+                            dt,
+                            abstol,
+                            reltol)
+
+    stats = CallbackStats(eltype(u))
+
+    context = CallbackContext(simulation, EulerAPSolution(u,t), stats)
+
+    initialize_callbacks!(callbacks, context)
+
+    # --------------------------------------------------
+    # Time stepping
+    # --------------------------------------------------
+
     while t < last(tspan) - eps(t)
+
         # Clip dt to avoid overshooting the final time
         actual_dt = min(dt, last(tspan) - t)
 
         backward_euler_step!(u,
-                             semi::AbstractSemidiscretization,
+                             semi,
                              actual_dt,
                              t;
                              abstol = abstol,
                              reltol = reltol)
 
         t += actual_dt
+        iteration += 1
+
+        # --------------------------------------------------
+        # Update callback context
+        # --------------------------------------------------
+        stats.iteration = iteration
+        stats.time = t
+        stats.dt = actual_dt
+
+        context.solution = EulerAPSolution(u, t)
+        perform_callbacks!(callbacks, context)
+
     end
+    finalize_callbacks!(callbacks, context)
 
     return EulerAPSolution(u, t)
 end

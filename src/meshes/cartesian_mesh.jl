@@ -59,17 +59,12 @@ function CartesianMesh(cells_per_dimension,
 end
 
 # Check if mesh is periodic
-isperiodic(mesh::CartesianMesh) = all(mesh.periodicity)
-isperiodic(mesh::CartesianMesh, dimension) = mesh.periodicity[dimension]
+@inline isperiodic(mesh::CartesianMesh) = all(mesh.periodicity)
+@inline isperiodic(mesh::CartesianMesh, dimension) = mesh.periodicity[dimension]
 
 @inline Base.ndims(::CartesianMesh{NDIMS}) where {NDIMS} = NDIMS
-Base.size(mesh::CartesianMesh) = mesh.cells_per_dimension
-Base.size(mesh::CartesianMesh, i) = mesh.cells_per_dimension[i]
-
-function Base.show(io::IO, mesh::CartesianMesh)
-    print(io, "CartesianMesh{", ndims(mesh), ", ", eltype(mesh), "}")
-    return nothing
-end
+@inline Base.size(mesh::CartesianMesh) = mesh.cells_per_dimension
+@inline Base.size(mesh::CartesianMesh, i) = mesh.cells_per_dimension[i]
 
 @inline ncells(mesh::CartesianMesh) = prod(size(mesh))
 
@@ -87,6 +82,8 @@ end
     return i + (j - 1) * size(mesh, 1)
 end
 
+@inline mesh(context::CallbackContext) = semi(context).mesh
+
 """
     minimum_cell_size(mesh)
 
@@ -94,5 +91,18 @@ Return the smallest mesh spacing.
 """
 @inline minimum_cell_size(mesh::CartesianMesh{NDIMS}) where {NDIMS} =
     minimum(mesh.dx)
+
+# ============================================================================
+# Display
+# ============================================================================
+
+@inline function Base.show(io::IO, mesh::CartesianMesh{NDIMS}) where {NDIMS}
+    print(io,
+          NDIMS,
+          "D Cartesian mesh (",
+          prod(size(mesh)),
+          " cells)")
+
+end
 
 end # @muladd
