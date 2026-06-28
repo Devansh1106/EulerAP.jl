@@ -82,8 +82,6 @@ end
     return i + (j - 1) * size(mesh, 1)
 end
 
-@inline mesh(context::CallbackContext) = semi(context).mesh
-
 """
     minimum_cell_size(mesh)
 

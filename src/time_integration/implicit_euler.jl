@@ -12,11 +12,18 @@ function backward_euler_residual!(F, u_new, u_old,
                                   t)
 
     rhs_vec = similar(u_new)
+    stats = semi.cache.stats
+
+    start = start_timer()
+
     rhs!(rhs_vec,
-        u_new,
-        semi.solver,
-        semi,
-        t)
+            u_new,
+            semi.solver,
+            semi,
+            t)
+
+    stats.rhs_time += elapsed_time(start)
+    stats.rhs_calls += 1
 
     @. F = u_new - u_old - dt * rhs_vec
 
@@ -28,12 +35,18 @@ function backward_euler_jacobian!(J, u_new,
                                   dt,
                                   t)
 
+    stats = semi.cache.stats
+    start = start_timer()
+
     assemble_jacobian!(J, u_new, 
                        semi,
                        semi.cache,
                        t)
-
     J.nzval .*= -dt
+
+    stats.jacobian_time += elapsed_time(start)
+    stats.jacobian_calls += 1
+
     n = size(J, 1)
 
     @inbounds for i in 1:n
@@ -75,10 +88,17 @@ function backward_euler_step!(u,
     prob = NonlinearProblem(nlf, u_old,
                             nothing)
 
+    stats = semi.cache.stats
+    start = start_timer()
+
     sol = NonlinearSolve.solve(prob, NewtonRaphson();
-                linsolve_kwargs = (linsolve = linsolve,),
-                abstol = abstol,
-                reltol = reltol)
+                               linsolve_kwargs = (linsolve = linsolve,),
+                               abstol = abstol,
+                               reltol = reltol)
+    
+    stats.nonlinear_solver_time += elapsed_time(start)
+    stats.nonlinear_solves += 1
+    stats.nonlinear_iterations += sol.stats.nsteps
 
     copyto!(u, sol.u)
 
@@ -116,6 +136,7 @@ function solve_implicit_euler(semi::AbstractSemidiscretization,
                             reltol)
 
     stats = CallbackStats(eltype(u))
+    semi.cache.stats = stats
 
     context = CallbackContext(simulation, EulerAPSolution(u,t), stats)
 
@@ -125,6 +146,7 @@ function solve_implicit_euler(semi::AbstractSemidiscretization,
     # Time stepping
     # --------------------------------------------------
 
+    start = start_timer()
     while t < last(tspan) - eps(t)
 
         # Clip dt to avoid overshooting the final time
@@ -137,20 +159,22 @@ function solve_implicit_euler(semi::AbstractSemidiscretization,
                              abstol = abstol,
                              reltol = reltol)
 
-        t += actual_dt
+        t         += actual_dt
         iteration += 1
 
         # --------------------------------------------------
         # Update callback context
         # --------------------------------------------------
+
         stats.iteration = iteration
         stats.time = t
         stats.dt = actual_dt
 
         context.solution = EulerAPSolution(u, t)
         perform_callbacks!(callbacks, context)
-
     end
+    
+    stats.total_runtime = elapsed_time(start)
     finalize_callbacks!(callbacks, context)
 
     return EulerAPSolution(u, t)

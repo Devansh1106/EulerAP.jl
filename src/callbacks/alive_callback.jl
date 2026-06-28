@@ -18,21 +18,31 @@ AliveCallback(; interval = 100) = AliveCallback(interval)
 
 
 function perform!(callback::AliveCallback,
-                  context::CallbackContext)
+                  context::CallbackContext;
+                  force = false)
 
     stats = context.stats
 
-    if stats.iteration % callback.interval != 0
+    if !force && stats.iteration % callback.interval != 0
         return nothing
     end
 
     println()
-    println("---------------- Alive ----------------")
+    println("======================= Alive ==============================")
+
     print_summary_line("Iteration", stats.iteration)
     print_summary_line("Time", stats.time)
     print_summary_line("Time step", stats.dt)
-    println("---------------------------------------")
 
+    println("============================================================")
+
+    return nothing
+end
+
+function finalize!(callback::AliveCallback,
+                   context::CallbackContext)
+
+    perform!(callback, context; force = true)
     return nothing
 end
 

@@ -91,6 +91,7 @@ function save_initial_condition(semi::SemidiscretizationHyperbolic,
 
     end
 
+    println("Saved initial condition to ", filename)
     return nothing
 end
 

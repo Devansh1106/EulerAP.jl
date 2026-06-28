@@ -9,6 +9,7 @@
 
 # Add more flux types as they are added into the code
 struct FluxRusanov end
+struct FluxEnergyStable end
 
 
 """

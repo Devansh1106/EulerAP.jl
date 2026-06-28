@@ -36,12 +36,12 @@ function initialize!(::SummaryCallback,
     print_summary_line("Mesh", mesh)
     print_summary_line("Equations", equations)
     print_summary_line("Solver", solver)
-    print_summary_line("Flux", numerical_flux(solver))
+    print_summary_line("Flux", solver.flux)
 
     println()
 
     print_summary_line("Dimensions", ndims(mesh))
-    print_summary_line("Grid", mesh.size)
+    print_summary_line("Grid", mesh.cells_per_dimension)
     print_summary_line("Domain", "$(mesh.coordinates_min) → $(mesh.coordinates_max)")
     print_summary_line("Cell size", mesh.dx)
 
@@ -57,14 +57,14 @@ function initialize!(::SummaryCallback,
 
     if ndims(mesh) == 1
 
-        bc = boundary_conditions(semi)
+        bc = semi.boundary_conditions
 
         print_summary_line("Left", bc.left)
         print_summary_line("Right", bc.right)
 
     elseif ndims(mesh) == 2
 
-        bc = boundary_conditions(semi)
+        bc = semi.boundary_conditions
 
         print_summary_line("Left", bc.left)
         print_summary_line("Right", bc.right)
@@ -92,6 +92,25 @@ function initialize!(::SummaryCallback,
     print_summary_line("Relative tolerance",
                        simulation.reltol)
 
+    println("============================================================")
+    println()
+
+    return nothing
+end
+
+function finalize!(::SummaryCallback,
+                   context::CallbackContext)
+
+    stats = context.stats
+
+    println()
+    println("============================================================")
+    println("                     EulerAP Simulation")
+    println("============================================================")
+    println()
+    print_summary_line("Iterations completed", stats.iteration)
+    print_summary_line("Final time", stats.time)
+    print_summary_line("Total runtime (s)", stats.total_runtime)
     println("============================================================")
     println()
 

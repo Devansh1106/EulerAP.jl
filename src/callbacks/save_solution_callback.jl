@@ -37,11 +37,12 @@ end
 
 
 function perform!(callback::SaveSolutionCallback,
-                  context::CallbackContext)
+                  context::CallbackContext;
+                  force = false)
 
     stats = context.stats
 
-    if stats.iteration % callback.interval != 0
+    if !force && stats.iteration % callback.interval != 0
         return nothing
     end
 
@@ -65,6 +66,13 @@ function perform!(callback::SaveSolutionCallback,
 
     println("[Output] Saved solution to ", filename)
 
+    return nothing
+end
+
+function finalize!(callback::SaveSolutionCallback,
+                   context::CallbackContext)
+
+    perform!(callback, context; force = true)
     return nothing
 end
 

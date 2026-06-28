@@ -28,4 +28,25 @@ abstract type AbstractMesh{NDIMS} end
 
 abstract type AbstractSolver end
 
+# ============================================================================
+# Timing utilities
+# ============================================================================
+
+"""
+    start_timer()
+
+Return the current wall-clock time in nanoseconds.
+
+Use together with [`elapsed_time`](@ref) for lightweight performance measurements.
+"""
+@inline start_timer() = time_ns()
+
+"""
+    elapsed_time(start_time)
+
+Return the elapsed wall-clock time (in seconds) since `start_time`,
+which must have been obtained using [`start_timer`](@ref).
+"""
+@inline elapsed_time(start_time::UInt64) = (time_ns() - start_time) * 1.0e-9
+
 end # @muladd

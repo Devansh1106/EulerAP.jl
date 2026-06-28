@@ -6,46 +6,37 @@
 #! format: noindent
 
 """
-    AnalysisCallback(; interval=100,
-                       exact_solution=nothing)
+    AnalysisCallback(; exact_solution, interval = typemax(Int))
 
-Compute and print error norms every `interval` timesteps.
+Compute error norms against an exact solution.
+
+By default, the analysis is performed only once at the final time.
 """
 struct AnalysisCallback{F} <: AbstractCallback
-
     interval::Int
-
-    exact_solution::Union{Nothing,F}
-
+    exact_solution::F
 end
 
+function AnalysisCallback(;
+                          exact_solution,
+                          interval = typemax(Int))
 
-"""
-    AnalysisCallback(; interval=100,
-                       exact_solution=nothing)
-
-Construct an analysis callback.
-"""
-function AnalysisCallback(; interval = 100,
-                            exact_solution = nothing)
-
-    return AnalysisCallback{typeof(exact_solution)}(
-        interval,
-        exact_solution
-    )
+    return AnalysisCallback(interval,
+                            exact_solution)
 end
 
 
 function perform!(callback::AnalysisCallback,
-                  context::CallbackContext)
+                  context::CallbackContext;
+                  force = false)
 
     stats = context.stats
 
-    if stats.iteration % callback.interval != 0
+    if !force && stats.iteration % callback.interval != 0
         return nothing
     end
 
-    callback.exact_solution === nothing && return nothing
+    # callback.exact_solution === nothing && return nothing
 
     simulation = context.simulation
 
@@ -56,7 +47,7 @@ function perform!(callback::AnalysisCallback,
     )
 
     println()
-    println("================ Analysis ================")
+    println("======================== Analysis ==========================")
 
     for (variable, norms) in enumerate(result.norms)
 
@@ -70,8 +61,16 @@ function perform!(callback::AnalysisCallback,
 
     end
 
-    println("==========================================")
+    println("============================================================")
 
+
+    return nothing
+end
+
+function finalize!(callback::AnalysisCallback,
+                   context::CallbackContext)
+
+    perform!(callback, context; force = true)
     return nothing
 end
 

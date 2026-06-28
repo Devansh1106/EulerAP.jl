@@ -15,6 +15,7 @@ using Pardiso
 using MuladdMacro
 using HDF5
 using RecipesBase
+using Printf
 
 # --------------------------------------------------
 # Core infrastructure
@@ -27,7 +28,24 @@ include("meshes/cartesian_mesh.jl")
 include("equations/equations.jl")
 
 include("semidiscretization/semidiscretization_hyperbolic.jl")
+
+# ----------------------------------------------------------------------
+# Callbacks must be included before semidiscretization.jl since
+# FVCache references the CallbackStats type.
+# ----------------------------------------------------------------------
+
+include("callbacks/callbacks.jl")
+
+include("callbacks/summary_callback.jl")
+include("callbacks/alive_callback.jl")
+include("callbacks/analysis_callback.jl")
+include("callbacks/save_solution_callback.jl")
+include("callbacks/performance_callback.jl")
+
 include("semidiscretization/semidiscretization.jl")
+
+# Numerical fluxes must be included before solvers
+include("equations/numerical_fluxes.jl")
 
 include("solvers/solvers.jl")
 
@@ -66,19 +84,6 @@ include("postprocessing/errors.jl")
 include("postprocessing/convergence.jl")
 
 # --------------------------------------------------
-# Callbacks
-# --------------------------------------------------
-
-include("callbacks/callbacks.jl")
-
-include("callbacks/summary_callback.jl")
-include("callbacks/alive_callback.jl")
-include("callbacks/analysis_callback.jl")
-include("callbacks/save_solution_callback.jl")
-include("callbacks/performance_callback.jl")
-
-
-# --------------------------------------------------
 # Exports
 # --------------------------------------------------
 
@@ -104,6 +109,7 @@ export ExtrapolateBC
 # Semidiscretizations
 export SemidiscretizationHyperbolic
 export semidiscretize
+export solve
 
 # Time Integrators
 export AbstractTimeIntegrator
@@ -128,6 +134,7 @@ export source_terms
 # Postprocessing
 export compute_errors
 export convergence_table
+export convergence_test
 
 # Callbacks
 export CallbackSet

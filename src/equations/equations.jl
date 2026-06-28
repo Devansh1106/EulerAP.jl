@@ -8,36 +8,25 @@
 # Retrieve number of variables from equation instance
 @inline nvariables(::AbstractEquations{NDIMS, NVARS}) where {NDIMS, NVARS} = NVARS
 
-# Used for Callbacks
-@inline equations(context::CallbackContext) = semi(context).equations
-
 # ============================================================================
-# Display
-# ============================================================================
-@inline Base.show(io::IO, ::RelaxationEulerEquations1D) = print(io, "Relaxation Euler equations (1D)")
-
-@inline Base.show(io::IO, ::RelaxationEulerEquations2D) = print(io, "Relaxation Euler equations (2D)")
-
-####################################################################################################
-# Include files with actual implementations for different systems of equations.
-
-# Numerical flux formulations that are independent of the specific system of equations
-include("./numerical_fluxes.jl")
-
 # Relaxation Euler system with pressure law = ρ^γ
+# ============================================================================
 abstract type AbstractRelaxationEulerEquations{NDIMS, NVARS} <: 
               AbstractEquations{NDIMS, NVARS} end
 
 include("relaxation_euler_1d.jl")
 include("relaxation_euler_2d.jl")
 
+@inline Base.show(io::IO, ::RelaxationEulerEquations1D) = print(io, "Relaxation Euler equations (1D)")
+
 # Euler Poisson Boltzmann
 abstract type AbstractEulerPoissonBoltzmann{NDIMS, NVARS} <: 
-              AbstractEquations{NDIMS, NVARS} end
-
+    AbstractEquations{NDIMS, NVARS} end
+    
 include("euler_poisson_boltzmann_pressure_less_1d.jl")
 include("euler_poisson_boltzmann_pressure_less_2d.jl")
-
+    
+@inline Base.show(io::IO, ::RelaxationEulerEquations2D) = print(io, "Relaxation Euler equations (2D)")
 
 
 

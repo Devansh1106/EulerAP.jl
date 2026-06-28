@@ -63,7 +63,7 @@ function save_solution(sol,
             create_group(file, "metadata")
 
         metadata_group["time"] =
-            sol.t[end]
+            time
 
         metadata_group["ndims"] =
             nd
@@ -89,6 +89,7 @@ function save_solution(sol,
 
     end
 
+    println("Saved solution to ", filename)
     return nothing
 end
 
@@ -96,10 +97,8 @@ end
 
 @inline solution_time(sol::EulerAPSolution) = sol.t
 
-@inline solution_vector(sol::SciMLBase.AbstractODESolution) =
-    sol.u[end]
+@inline solution_vector(sol::SciMLBase.AbstractODESolution) = sol.u[end]
 
-@inline solution_time(sol::SciMLBase.AbstractODESolution) =
-    sol.t[end]
+@inline solution_time(sol::SciMLBase.AbstractODESolution) = sol.t[end]
 
 end # @muladd

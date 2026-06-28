@@ -31,6 +31,9 @@ mutable struct FVCache{TJacobian, TPosition, TX, TY, TJlocal, TResidualBuffer}
     config::Union{Nothing, ForwardDiff.JacobianConfig}
     local_residual!::Union{Nothing, Function}
     residual_buffer::TResidualBuffer
+
+    # Statistics
+    stats::Union{Nothing, CallbackStats}
 end
 
 function create_cache(mesh::AbstractMesh,
@@ -60,7 +63,8 @@ function create_cache(mesh::AbstractMesh,
                    J_local_cache, # J_local_cache
                    nothing,       # config
                    nothing,       # local_residual!
-                   residual_buffer) # residual_buffer
+                   residual_buffer, # residual_buffer
+                   nothing)       # stats
 end
 
 abstract type AbstractBC end

@@ -16,6 +16,30 @@ Abstract supertype for all callbacks.
 """
 abstract type AbstractCallback end
 
+"""
+    CallbackContext
+
+Object passed to every callback.
+
+It contains
+
+- the simulation setup,
+- the current numerical solution,
+- the runtime statistics.
+"""
+mutable struct CallbackContext{SimulationType,Solution,Stats}
+
+    simulation::SimulationType
+
+    solution::Solution
+
+    stats::Stats
+
+end
+
+@inline mesh(context::CallbackContext) = semi(context).mesh
+
+@inline equations(context::CallbackContext) = semi(context).equations
 
 """
     CallbackSet(callbacks...)
@@ -197,28 +221,6 @@ end
 # ============================================================================
 # Callback context
 # ============================================================================
-
-"""
-    CallbackContext
-
-Object passed to every callback.
-
-It contains
-
-- the simulation setup,
-- the current numerical solution,
-- the runtime statistics.
-"""
-mutable struct CallbackContext{SimulationType,Solution,Stats}
-
-    simulation::SimulationType
-
-    solution::Solution
-
-    stats::Stats
-
-end
-
 @inline function print_summary_line(name, value)
     println(rpad(name, 22), ": ", value)
 end
@@ -250,8 +252,7 @@ perform!(::AbstractCallback,
 
 Finalize a callback after time integration.
 """
-finalize!(::AbstractCallback,
-          ::CallbackContext) = nothing
+finalize!(::AbstractCallback, ::CallbackContext) = nothing
 
 # ============================================================================
 # Callback execution
