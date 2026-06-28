@@ -7,7 +7,7 @@ using EulerAP
 mesh = CartesianMesh(
     (100,),
     (-5.0,),
-    (5.0,),
+    (5.0,)
     # periodicity = (true,)
 )
 
@@ -15,9 +15,9 @@ mesh = CartesianMesh(
 # Equations
 # --------------------------------------------------
 
-equations = RelaxationEulerEquations1D(;
+equations = RelaxationEulerEquations1D(
     gamma = 3.0,
-    epsilon = 1e-3
+    epsilon = 1.0e-3
 )
 
 # --------------------------------------------------
@@ -57,30 +57,58 @@ semi = SemidiscretizationHyperbolic(
 
 tspan = (0.0, 0.1)
 
-sol = EulerAP.solve(
-    semi,
-    tspan,
-    ImplicitEulerCustom() # dt = dx by default; can be overwritten
+# --------------------------------------------------
+# Callbacks
+# --------------------------------------------------
+
+callbacks = CallbackSet(
+    AliveCallback(),
+    PerformanceCallback(),
+    SummaryCallback()
 )
-
-# --------------------------------------------------
-# Save initial condition
-# --------------------------------------------------
-
-# mesh_str = join(mesh.cells_per_dimension, "x")
-# init_filename = "relaxation_euler_1d_sinosidal_riemann_$(mesh_str)_$(equations.epsilon)_initial.h5"
-# save_initial_condition(semi,
-#                        joinpath("data_new", init_filename))
-
 
 # --------------------------------------------------
 # Output
 # --------------------------------------------------
 
-mesh_str = join(mesh.cells_per_dimension, "x")
-filename = "relaxation_euler_1d_sinosidal_riemann$(mesh_str)_$(equations.epsilon).h5"
-save_solution(sol,
-              semi,
-              joinpath("data_new", filename))
+const OUTPUT_DIR = "data_new"
 
-println("Simulation complete.")
+mesh_str = join(mesh.cells_per_dimension, "x")
+eps_str  = equations.epsilon
+
+initial_filename =
+    "relaxation_euler_1d_sinusoidal_riemann_$(mesh_str)_$(eps_str)_initial.h5"
+
+solution_filename =
+    "relaxation_euler_1d_sinusoidal_riemann_$(mesh_str)_$(eps_str).h5"
+
+# --------------------------------------------------
+# Save initial condition
+# --------------------------------------------------
+
+save_initial_condition(
+    semi,
+    joinpath(OUTPUT_DIR, initial_filename);
+    t = first(tspan)
+)
+
+# --------------------------------------------------
+# Solve
+# --------------------------------------------------
+
+sol = solve(
+    semi,
+    tspan,
+    ImplicitEulerCustom();
+    callbacks = callbacks
+)
+
+# --------------------------------------------------
+# Save final solution
+# --------------------------------------------------
+
+save_solution(
+    sol,
+    semi,
+    joinpath(OUTPUT_DIR, solution_filename)
+)

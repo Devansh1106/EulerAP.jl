@@ -7,17 +7,17 @@ using EulerAP
 mesh = CartesianMesh(
     (100,),
     (0.0,),
-    (1.0,),
-    periodicity = (true,)
+    (1.0,)
+    # periodicity = (true,)
 )
 
 # --------------------------------------------------
 # Equations
 # --------------------------------------------------
 
-equations = RelaxationEulerEquations1D(;
+equations = RelaxationEulerEquations1D(
     gamma = 3.0,
-    epsilon = 1e-4
+    epsilon = 1.0e-1
 )
 
 # --------------------------------------------------
@@ -34,8 +34,8 @@ solver = FVSolver(
 # --------------------------------------------------
 
 boundary_conditions = (
-    left  = PeriodicBC(),
-    right = PeriodicBC()
+    left  = ExtrapolateBC(),
+    right = ExtrapolateBC()
 )
 
 # --------------------------------------------------
@@ -45,41 +45,70 @@ boundary_conditions = (
 semi = SemidiscretizationHyperbolic(
     mesh,
     equations,
-    initial_condition_single_box,
+    initial_condition_riemann,
     solver;
     source_terms = source_terms,
     boundary_conditions = boundary_conditions
 )
 
 # --------------------------------------------------
-# Save initial condition
-# --------------------------------------------------
-
-mesh_str = join(mesh.cells_per_dimension, "x")
-init_filename = "relaxation_euler_1d_riemann_$(mesh_str)_$(equations.epsilon)_initial.h5"
-save_initial_condition(semi,
-                       joinpath("data_new", init_filename))
-
-# --------------------------------------------------
 # Time integration
 # --------------------------------------------------
 
-tspan = (0.0, 0.01)
+tspan = (0.0, 0.1)
 
-sol = EulerAP.solve(
-    semi,
-    tspan,
-    ImplicitEulerCustom() # dt = dx by default; can be overwritten
+# --------------------------------------------------
+# Callbacks
+# --------------------------------------------------
+
+callbacks = CallbackSet(
+    AliveCallback(),
+    PerformanceCallback(),
+    SummaryCallback()
 )
 
 # --------------------------------------------------
 # Output
 # --------------------------------------------------
 
-mesh_str = join(mesh.cells_per_dimension, "x")
-filename = "relaxation_euler_1d_riemann_$(mesh_str)_$(equations.epsilon).h5"
-save_solution(sol,
-              semi,
-              joinpath("data_new", filename))
+const OUTPUT_DIR = "data_new"
 
-println("Simulation complete.")
+mesh_str = join(mesh.cells_per_dimension, "x")
+eps_str  = equations.epsilon
+
+initial_filename =
+    "relaxation_euler_1d_riemann_$(mesh_str)_$(eps_str)_initial.h5"
+
+solution_filename =
+    "relaxation_euler_1d_riemann_$(mesh_str)_$(eps_str).h5"
+
+# --------------------------------------------------
+# Save initial condition
+# --------------------------------------------------
+
+save_initial_condition(
+    semi,
+    joinpath(OUTPUT_DIR, initial_filename);
+    t = first(tspan)
+)
+
+# --------------------------------------------------
+# Solve
+# --------------------------------------------------
+
+sol = solve(
+    semi,
+    tspan,
+    ImplicitEulerCustom();
+    callbacks = callbacks
+)
+
+# --------------------------------------------------
+# Save final solution
+# --------------------------------------------------
+
+save_solution(
+    sol,
+    semi,
+    joinpath(OUTPUT_DIR, solution_filename)
+)
