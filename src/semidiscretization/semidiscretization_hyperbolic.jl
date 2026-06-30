@@ -54,10 +54,10 @@ function SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver
 end
 
 # For 1D Cartesian Mesh 
-function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{1}, bcs)
+function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{1}, bcs::BoundaryConditions1D)
     if mesh.periodicity[1]
-        if !(bcs.left isa PeriodicBC &&
-             bcs.right isa PeriodicBC)
+        if !(bcs.left isa PeriodicBC{1} &&
+             bcs.right isa PeriodicBC{1})
 
             throw(ArgumentError(
                 "Periodic x-direction requires PeriodicBC on both left and right boundaries."))
@@ -67,10 +67,10 @@ function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{1}, bcs)
 end
 
 # For 2D Cartesian Mesh 
-function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{2}, bcs)
+function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{2}, bcs::BoundaryConditions2D)
     if mesh.periodicity[1]
-        if !(bcs.left isa PeriodicBC &&
-             bcs.right isa PeriodicBC)
+        if !(bcs.left isa PeriodicBC{2} &&
+             bcs.right isa PeriodicBC{2})
 
             throw(ArgumentError(
                 "Periodic x-direction requires PeriodicBC on both left and right boundaries."))
@@ -78,8 +78,8 @@ function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{2}, bcs)
     end
 
     if mesh.periodicity[2]
-        if !(bcs.bottom isa PeriodicBC &&
-             bcs.top isa PeriodicBC)
+        if !(bcs.bottom isa PeriodicBC{2} &&
+             bcs.top isa PeriodicBC{2})
 
             throw(ArgumentError(
                 "Periodic y-direction requires PeriodicBC on both bottom and top boundaries."))
@@ -105,5 +105,7 @@ function rhs!(du_ode, u_ode,
 
     return nothing
 end
+
+@inline Base.show(io::IO, ::SemidiscretizationHyperbolic) = print(io, "Hyperbolic semidiscretization")
 
 end # @muladd

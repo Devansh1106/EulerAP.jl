@@ -20,7 +20,8 @@ function backward_euler_residual!(F, u_new, u_old,
             u_new,
             semi.solver,
             semi,
-            t)
+            t;
+            dt=dt)
 
     stats.rhs_time += elapsed_time(start)
     stats.rhs_calls += 1

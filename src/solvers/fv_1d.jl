@@ -60,10 +60,6 @@ end
     return sign < 0 ? bcfg.left : bcfg.right
 end
 
-@inline function _wrap_index(i::Int, nx::Int)
-    return mod1(i, nx)
-end
-
 @inline function _state_at(u::AbstractVector,
                            I::CartesianIndex{1},
                            semi::AbstractSemidiscretization)
@@ -92,7 +88,8 @@ end
 function rhs!(du, u,
               solver::FVSolver{1, TFlux},
               semi::SemidiscretizationHyperbolic,
-              t) where {TFlux}
+              t;
+              dt=0.0) where {TFlux}
 
     cache = semi.cache
     fill!(du, zero(eltype(du)))
@@ -106,7 +103,9 @@ function rhs!(du, u,
 
         local_residual!(cache.residual_buffer,
                         cache.x_cache,
-                        semi)
+                        semi.solver,
+                        semi;
+                        dt=dt)
         cell = cell_index(I, semi)
 
         @inbounds for v in 1:nvars
@@ -175,7 +174,7 @@ end
                                  nvars))
 end
 
-@inline function local_residual!(y, x, semi::AbstractSemidiscretization)
+@inline function local_residual!(y, x, solver::FVSolver{1, TFlux}, semi::AbstractSemidiscretization; dt=0.0) where {TFlux}
 
     equations = semi.equations
     source_terms = semi.source_terms
@@ -189,15 +188,16 @@ end
     u_left   = local_state(x, 2, equations)
     u_right  = local_state(x, 3, equations)
 
+    dx = semi.mesh.dx[1]
+    
     # --------------------------------------------------
     # Numerical fluxes
     # --------------------------------------------------
 
-    flux_left = flux(u_left, u_center, 1, equations)
+    flux_left = flux(u_left, u_center, 1, equations, dt)
 
-    flux_right = flux(u_center, u_right, 1, equations)
+    flux_right = flux(u_center, u_right, 1, equations, dt)
 
-    dx = semi.mesh.dx[1]
 
     # --------------------------------------------------
     # FV divergence
@@ -223,25 +223,7 @@ end
     return nothing
 end
 
-@inline function local_state(x, local_cell::Int, equations)
-
-    nvars = nvariables(equations)
-    first = (local_cell - 1) * nvars + 1
-    last  = local_cell * nvars
-
-    return SVector{nvars}(@view x[first:last])
-end
-
-@inline function apply_bc(bc::PeriodicBC,
-                          u,
-                          I,
-                          semi,
-                          t)
-
-    error("PeriodicBC should never reach apply_bc")
-end
-
-@inline function apply_bc(bc::ExtrapolateBC,
+@inline function apply_bc(bc::ExtrapolateBC{1},
                           u,
                           I::CartesianIndex{1},
                           semi,
@@ -254,7 +236,7 @@ end
     return extract_cell_state(u, CartesianIndex(interior_i), semi)
 end
 
-@inline function apply_bc(bc::DirichletBC,
+@inline function apply_bc(bc::DirichletBC{1},
                           u,
                           I::CartesianIndex{1},
                           semi,
@@ -265,7 +247,7 @@ end
     return bc.boundary_value(x, t, semi.equations)
 end
 
-@inline function apply_bc(bc::NeumannBC,
+@inline function apply_bc(bc::NeumannBC{1},
                           u,
                           I::CartesianIndex{1},
                           semi,

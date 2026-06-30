@@ -27,10 +27,8 @@ include("meshes/cartesian_mesh.jl")
 
 include("equations/equations.jl")
 
-include("semidiscretization/semidiscretization_hyperbolic.jl")
-
 # ----------------------------------------------------------------------
-# Callbacks must be included before semidiscretization.jl since
+# Callbacks must be included before solvers and semidiscretizations since
 # FVCache references the CallbackStats type.
 # ----------------------------------------------------------------------
 
@@ -43,6 +41,10 @@ include("callbacks/save_solution_callback.jl")
 include("callbacks/performance_callback.jl")
 
 include("semidiscretization/semidiscretization.jl")
+
+include("semidiscretization/semidiscretization_hyperbolic.jl")
+
+
 
 # Numerical fluxes must be included before solvers
 include("equations/numerical_fluxes.jl")
@@ -96,11 +98,14 @@ export RelaxationEulerEquations2D
 
 # Numerical Fluxes
 export FluxRusanov
+export FluxEnergyStable
 
 # Solvers
 export FVSolver
 
 # Boundary Conditions
+export BoundaryConditions1D
+export BoundaryConditions2D
 export PeriodicBC
 export DirichletBC
 export NeumannBC

@@ -67,18 +67,61 @@ function create_cache(mesh::AbstractMesh,
                    nothing)       # stats
 end
 
-abstract type AbstractBC end
+abstract type AbstractBC{NDIMS} end
 
-struct PeriodicBC <: AbstractBC end
+struct PeriodicBC{NDIMS} <: AbstractBC{NDIMS} end
 
-struct ExtrapolateBC <: AbstractBC end
+struct ExtrapolateBC{NDIMS} <: AbstractBC{NDIMS} end
 
-struct DirichletBC{F} <: AbstractBC
+struct DirichletBC{NDIMS, F} <: AbstractBC{NDIMS}
     boundary_value::F
 end
 
-struct NeumannBC{F} <: AbstractBC
+struct NeumannBC{NDIMS, F} <: AbstractBC{NDIMS}
     boundary_gradient::F
+end
+
+struct BoundaryConditions1D
+    sides::Tuple{AbstractBC{1}, AbstractBC{1}}
+end
+
+function BoundaryConditions1D(left::AbstractBC{1}, right::AbstractBC{1})
+    return BoundaryConditions1D((left, right))
+end
+
+function Base.getproperty(bc::BoundaryConditions1D, side::Symbol)
+    sides = getfield(bc, :sides)
+    if side === :left
+        return sides[1]
+    elseif side === :right
+        return sides[2]
+    else
+        error("Unknown boundary side: $side for 1D")
+    end
+end
+
+struct BoundaryConditions2D
+    sides::Tuple{AbstractBC{2}, AbstractBC{2}, AbstractBC{2}, AbstractBC{2}}
+end
+
+function BoundaryConditions2D(left::AbstractBC{2}, right::AbstractBC{2},
+                              bottom::AbstractBC{2}, top::AbstractBC{2})
+    return BoundaryConditions2D((left, right, bottom, top))
+end
+
+function Base.getproperty(bc::BoundaryConditions2D, side::Symbol)
+    sides = getfield(bc, :sides)
+    if side === :left
+        return sides[1]
+    elseif side === :right
+        return sides[2]
+    elseif side === :bottom
+        return sides[3]
+    elseif side === :top
+        return sides[4]
+    else
+        error("Unknown boundary side: $side for 2D")
+    end
 end
 
 """
@@ -184,10 +227,8 @@ function build_jacobian_cache!(semi::AbstractSemidiscretization)
 
             for neighbor in neighbors
                 # neighbor == 0 && continue
-                if neighbor isa CartesianIndex{1}
-                    if !(1 <= neighbor[1] <= size(mesh,1))
-                        continue
-                    end
+                if !(neighbor isa CartesianIndex{ndims(mesh)})
+                    continue
                 end
                 neighbor_cell = cell_index(neighbor, mesh)
 
@@ -217,12 +258,10 @@ function build_jacobian_cache!(semi::AbstractSemidiscretization)
         for row_var in 1:nvars
             row = global_dof(center, row_var, nvars)
 
-            for (neighbor_idx, neighbor) in enumerate(neighbors)
+                for (neighbor_idx, neighbor) in enumerate(neighbors)
                 # neighbor == 0 && continue
-                if neighbor isa CartesianIndex{1}
-                    if !(1 <= neighbor[1] <= size(mesh,1))
-                        continue
-                    end
+                if !(neighbor isa CartesianIndex{ndims(mesh)})
+                    continue
                 end
                 neighbor_cell = cell_index(neighbor, mesh)
 
@@ -257,7 +296,7 @@ function build_jacobian_cache!(semi::AbstractSemidiscretization)
 
     local_residual_closure = (y, x) -> 
     begin
-        local_residual!(y, x, semi)
+        local_residual!(y, x, semi.solver, semi; dt=0.0)
         return nothing
     end
 
@@ -329,14 +368,10 @@ end
 Construct the global ODE state vector at time `t`
 using the user-supplied initial condition function.
 
-The global state vector is stored in cell-major ordering:
-
-    [ρ₁, m₁, ρ₂, m₂, ...]
-
-for a 1D two-variable system.
+The global state vector is stored in cell-major ordering.
 """
 function initial_condition(t,
-                           semi::SemidiscretizationHyperbolic)
+                           semi::AbstractSemidiscretization)
 
     mesh      = semi.mesh
     equations = semi.equations
@@ -365,17 +400,20 @@ end
 # Display
 # ============================================================================
 
-@inline Base.show(io::IO, ::SemidiscretizationHyperbolic) = print(io, "Hyperbolic semidiscretization")
-# ============================================================================
-# Display
-# ============================================================================
+@inline Base.show(io::IO, ::PeriodicBC{1}) = print(io, "Periodic")
 
-@inline Base.show(io::IO, ::PeriodicBC) = print(io, "Periodic")
+@inline Base.show(io::IO, ::DirichletBC{1}) = print(io, "Dirichlet")
 
-@inline Base.show(io::IO, ::DirichletBC) = print(io, "Dirichlet")
+@inline Base.show(io::IO, ::NeumannBC{1}) = print(io, "Neumann")
 
-@inline Base.show(io::IO, ::NeumannBC) = print(io, "Neumann")
+@inline Base.show(io::IO, ::ExtrapolateBC{1}) = print(io, "Extrapolation")
 
-@inline Base.show(io::IO, ::ExtrapolateBC) = print(io, "Extrapolation")
+@inline Base.show(io::IO, ::PeriodicBC{2}) = print(io, "Periodic")
+
+@inline Base.show(io::IO, ::DirichletBC{2}) = print(io, "Dirichlet")
+
+@inline Base.show(io::IO, ::NeumannBC{2}) = print(io, "Neumann")
+
+@inline Base.show(io::IO, ::ExtrapolateBC{2}) = print(io, "Extrapolation")
 
 end # @muladd
