@@ -41,9 +41,9 @@ solver = FVSolver(
 # Boundary conditions
 # --------------------------------------------------
 
-boundary_conditions = (
-    left  = ExtrapolateBC(),
-    right = ExtrapolateBC()
+boundary_conditions = BoundaryConditions1D(
+    ExtrapolateBC{1}(),
+    ExtrapolateBC{1}()
 )
 
 # --------------------------------------------------

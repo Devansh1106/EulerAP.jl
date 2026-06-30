@@ -33,9 +33,9 @@ solver = FVSolver(
 # Boundary conditions
 # --------------------------------------------------
 
-boundary_conditions = (
-    left  = PeriodicBC(),
-    right = PeriodicBC()
+boundary_conditions = BoundaryConditions1D(
+    PeriodicBC{1}(),
+    PeriodicBC{1}()
 )
 
 # --------------------------------------------------

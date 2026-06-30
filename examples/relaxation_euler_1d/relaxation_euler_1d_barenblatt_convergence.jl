@@ -25,9 +25,9 @@ end
 # Build semi for a given grid size
 function make_semi(N)
     mesh = CartesianMesh((N,), (-6.0,), (6.0,))
-    equations = RelaxationEulerEquations1D(gamma=3.0, epsilon=1e-6)
+    equations = RelaxationEulerEquations1D(gamma=3.0, epsilon=1e-1)
     solver = FVSolver(flux=FluxRusanov(), ndims=1)
-    bc = (left=ExtrapolateBC(), right=ExtrapolateBC())
+    bc = BoundaryConditions1D(ExtrapolateBC{1}(), ExtrapolateBC{1}())
     return SemidiscretizationHyperbolic(
         mesh, equations,
         initial_condition_barenblatt,

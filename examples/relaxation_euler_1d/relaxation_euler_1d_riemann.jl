@@ -17,7 +17,7 @@ mesh = CartesianMesh(
 
 equations = RelaxationEulerEquations1D(
     gamma = 3.0,
-    epsilon = 1.0e-1
+    epsilon = 1.0e-0
 )
 
 # --------------------------------------------------
@@ -26,6 +26,7 @@ equations = RelaxationEulerEquations1D(
 
 solver = FVSolver(
     flux = FluxRusanov(),
+    # flux = FluxEnergyStable(1),
     ndims = 1
 )
 
@@ -33,9 +34,9 @@ solver = FVSolver(
 # Boundary conditions
 # --------------------------------------------------
 
-boundary_conditions = (
-    left  = ExtrapolateBC(),
-    right = ExtrapolateBC()
+boundary_conditions = BoundaryConditions1D(
+    ExtrapolateBC{1}(),
+    ExtrapolateBC{1}()
 )
 
 # --------------------------------------------------
@@ -55,7 +56,7 @@ semi = SemidiscretizationHyperbolic(
 # Time integration
 # --------------------------------------------------
 
-tspan = (0.0, 0.1)
+tspan = (0.0, 0.01)
 
 # --------------------------------------------------
 # Callbacks
