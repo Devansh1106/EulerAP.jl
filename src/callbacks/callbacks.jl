@@ -5,6 +5,8 @@
 @muladd begin
 #! format: noindent
 
+using TimerOutputs
+
 # ============================================================================
 # Abstract callback interface
 # ============================================================================
@@ -93,6 +95,10 @@ Stores simulation state together with runtime statistics.
 
 The time integrator updates this object during the simulation while
 callbacks only read from it.
+
+Timing and memory allocation data are tracked via a `TimerOutput`,
+which automatically records wall-clock time, number of allocations,
+and total bytes allocated for each labeled section.
 """
 mutable struct CallbackStats{T}
 
@@ -107,18 +113,10 @@ mutable struct CallbackStats{T}
     dt::T
 
     # ------------------------------------------------------------------------
-    # Timings
+    # Timing & memory (TimerOutput)
     # ------------------------------------------------------------------------
 
-    rhs_time::T
-
-    jacobian_time::T
-
-    linear_solver_time::T
-
-    nonlinear_solver_time::T
-
-    total_runtime::T
+    timer::TimerOutput
 
     # ------------------------------------------------------------------------
     # Function call counters
@@ -140,14 +138,6 @@ mutable struct CallbackStats{T}
 
     linear_solves::Int
 
-    # ------------------------------------------------------------------------
-    # Memory statistics
-    # ------------------------------------------------------------------------
-
-    allocations::Int
-
-    bytes_allocated::Int
-
 end
 
 
@@ -164,14 +154,7 @@ function CallbackStats(::Type{T}) where {T}
         zero(T),
         zero(T),
 
-        zero(T),
-        zero(T),
-        zero(T),
-        zero(T),
-        zero(T),
-
-        0,
-        0,
+        TimerOutput(),
 
         0,
         0,
@@ -196,11 +179,7 @@ function reset!(stats::CallbackStats)
     stats.time = zero(stats.time)
     stats.dt = zero(stats.dt)
 
-    stats.rhs_time = zero(stats.rhs_time)
-    stats.jacobian_time = zero(stats.jacobian_time)
-    stats.linear_solver_time = zero(stats.linear_solver_time)
-    stats.nonlinear_solver_time = zero(stats.nonlinear_solver_time)
-    stats.total_runtime = zero(stats.total_runtime)
+    reset_timer!(stats.timer)
 
     stats.rhs_calls = 0
     stats.jacobian_calls = 0
@@ -210,9 +189,6 @@ function reset!(stats::CallbackStats)
 
     stats.nonlinear_solves = 0
     stats.linear_solves = 0
-
-    stats.allocations = 0
-    stats.bytes_allocated = 0
 
     return nothing
 end

@@ -16,7 +16,7 @@ end
 
 function exact_solution_barenblatt(x, t, equations)
     γ = equations.gamma
-    ρ = barenblatt(x[1], t, 1.0, γ)
+    ρ = barenblatt(x[1], t, 1.0, γ)     # Γ = 1.0
     β = 1.0 / (γ + 1.0)
     mx = ρ * β * x[1] / t
     return (ρ, mx)

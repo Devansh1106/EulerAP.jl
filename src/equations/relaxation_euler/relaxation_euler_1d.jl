@@ -49,7 +49,6 @@ end
 
 # orientation = 1 for the x-axis
 #               2 for the y-axis
-# TODO: add a similar 2D version in 2D file
 @inline function flux(u::SVector{2}, orientation, 
                       equations::RelaxationEulerEquations1D)
 

@@ -56,7 +56,7 @@ semi = SemidiscretizationHyperbolic(
 # Time integration
 # --------------------------------------------------
 
-tspan = (0.0, 0.01)
+tspan = (0.0, 0.02)
 
 # --------------------------------------------------
 # Callbacks

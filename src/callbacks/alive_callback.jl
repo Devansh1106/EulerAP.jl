@@ -27,7 +27,6 @@ function perform!(callback::AliveCallback,
         return nothing
     end
 
-    println()
     println("======================= Alive ==============================")
 
     print_summary_line("Iteration", stats.iteration)
@@ -36,13 +35,6 @@ function perform!(callback::AliveCallback,
 
     println("============================================================")
 
-    return nothing
-end
-
-function finalize!(callback::AliveCallback,
-                   context::CallbackContext)
-
-    perform!(callback, context; force = true)
     return nothing
 end
 

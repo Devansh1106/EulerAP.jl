@@ -61,18 +61,6 @@ end
     end
 end
 
-@inline function _state_at(u::AbstractVector,
-                           I::CartesianIndex{2},
-                           semi::AbstractSemidiscretization)
-
-    nvars = nvariables(semi.equations)
-    cell  = cell_index(I, semi)
-
-    return SVector{nvars}(ntuple(v ->
-                                 u[global_dof(cell, v, nvars)],
-                                 nvars))
-end
-
 @inline function boundary_side(I::CartesianIndex{2},
                                semi::AbstractSemidiscretization)
 
@@ -211,10 +199,10 @@ end
     # Numerical fluxes
     # --------------------------------------------------
 
-    flux_left   = flux(u_left, u_center, 1, equations, dt)
-    flux_right  = flux(u_center, u_right, 1, equations, dt)
-    flux_bottom = flux(u_bottom, u_center, 2, equations, dt)
-    flux_top    = flux(u_center, u_top, 2, equations, dt)
+    flux_left   = flux(u_left, u_center, 1, equations, dt, dx)
+    flux_right  = flux(u_center, u_right, 1, equations, dt, dx)
+    flux_bottom = flux(u_bottom, u_center, 2, equations, dt, dy)
+    flux_top    = flux(u_center, u_top, 2, equations, dt, dy)
 
     # --------------------------------------------------
     # FV divergence

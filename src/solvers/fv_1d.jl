@@ -60,18 +60,6 @@ end
     return sign < 0 ? bcfg.left : bcfg.right
 end
 
-@inline function _state_at(u::AbstractVector,
-                           I::CartesianIndex{1},
-                           semi::AbstractSemidiscretization)
-
-    nvars = nvariables(semi.equations)
-    cell  = cell_index(I, semi)
-
-    return SVector{nvars}(ntuple(v ->
-                                 u[global_dof(cell, v, nvars)],
-                                 nvars))
-end
-
 @inline function boundary_side(I::CartesianIndex{1},
                                semi::AbstractSemidiscretization)
 
@@ -194,9 +182,9 @@ end
     # Numerical fluxes
     # --------------------------------------------------
 
-    flux_left = flux(u_left, u_center, 1, equations, dt)
+    flux_left = flux(u_left, u_center, 1, equations, dt, dx)
 
-    flux_right = flux(u_center, u_right, 1, equations, dt)
+    flux_right = flux(u_center, u_right, 1, equations, dt, dx)
 
 
     # --------------------------------------------------

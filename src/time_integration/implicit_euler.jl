@@ -4,6 +4,8 @@
 @muladd begin
 #! format: noindent
 
+using TimerOutputs
+
 const linsolve = MKLPardisoFactorize()
 
 function backward_euler_residual!(F, u_new, u_old,
@@ -14,16 +16,15 @@ function backward_euler_residual!(F, u_new, u_old,
     rhs_vec = similar(u_new)
     stats = semi.cache.stats
 
-    start = start_timer()
+    @timeit stats.timer "rhs" begin
+        rhs!(rhs_vec,
+             u_new,
+             semi.solver,
+             semi,
+             t;
+             dt=dt)
+    end
 
-    rhs!(rhs_vec,
-            u_new,
-            semi.solver,
-            semi,
-            t;
-            dt=dt)
-
-    stats.rhs_time += elapsed_time(start)
     stats.rhs_calls += 1
 
     @. F = u_new - u_old - dt * rhs_vec
@@ -37,19 +38,20 @@ function backward_euler_jacobian!(J, u_new,
                                   t)
 
     stats = semi.cache.stats
-    start = start_timer()
 
-    assemble_jacobian!(J, u_new, 
-                       semi,
-                       semi.cache,
-                       t)
-    J.nzval .*= -dt
+    @timeit stats.timer "jacobian" begin
+        assemble_jacobian!(J, u_new, 
+                           semi,
+                           semi.cache,
+                           t)
+        J.nzval .*= -dt
+    end
 
-    stats.jacobian_time += elapsed_time(start)
     stats.jacobian_calls += 1
 
     n = size(J, 1)
 
+    # specific to backward Euler
     @inbounds for i in 1:n
         J[i, i] += 1
     end
@@ -90,14 +92,14 @@ function backward_euler_step!(u,
                             nothing)
 
     stats = semi.cache.stats
-    start = start_timer()
 
-    sol = NonlinearSolve.solve(prob, NewtonRaphson();
-                               linsolve_kwargs = (linsolve = linsolve,),
-                               abstol = abstol,
-                               reltol = reltol)
-    
-    stats.nonlinear_solver_time += elapsed_time(start)
+    @timeit stats.timer "nonlinear_solve" begin
+        sol = NonlinearSolve.solve(prob, NewtonRaphson();
+                                   linsolve_kwargs = (linsolve = linsolve,),
+                                   abstol = abstol,
+                                   reltol = reltol)
+    end
+
     stats.nonlinear_solves += 1
     stats.nonlinear_iterations += sol.stats.nsteps
 
@@ -147,35 +149,35 @@ function solve_implicit_euler(semi::AbstractSemidiscretization,
     # Time stepping
     # --------------------------------------------------
 
-    start = start_timer()
-    while t < last(tspan) - eps(t)
+    @timeit stats.timer "total_runtime" begin
+        while t < last(tspan) - eps(t)
 
-        # Clip dt to avoid overshooting the final time
-        actual_dt = min(dt, last(tspan) - t)
+            # Clip dt to avoid overshooting the final time
+            actual_dt = min(dt, last(tspan) - t)
 
-        backward_euler_step!(u,
-                             semi,
-                             actual_dt,
-                             t;
-                             abstol = abstol,
-                             reltol = reltol)
+            backward_euler_step!(u,
+                                 semi,
+                                 actual_dt,
+                                 t;
+                                 abstol = abstol,
+                                 reltol = reltol)
 
-        t         += actual_dt
-        iteration += 1
+            t         += actual_dt
+            iteration += 1
 
-        # --------------------------------------------------
-        # Update callback context
-        # --------------------------------------------------
+            # --------------------------------------------------
+            # Update callback context
+            # --------------------------------------------------
 
-        stats.iteration = iteration
-        stats.time = t
-        stats.dt = actual_dt
+            stats.iteration = iteration
+            stats.time = t
+            stats.dt = actual_dt
 
-        context.solution = EulerAPSolution(u, t)
-        perform_callbacks!(callbacks, context)
+            context.solution = EulerAPSolution(u, t)
+            perform_callbacks!(callbacks, context)
+        end
     end
-    
-    stats.total_runtime = elapsed_time(start)
+
     finalize_callbacks!(callbacks, context)
 
     return EulerAPSolution(u, t)

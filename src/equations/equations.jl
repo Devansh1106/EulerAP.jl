@@ -9,25 +9,51 @@
 @inline nvariables(::AbstractEquations{NDIMS, NVARS}) where {NDIMS, NVARS} = NVARS
 
 # ============================================================================
-# Relaxation Euler system with pressure law = ρ^γ
+# Hyperbolic equations
 # ============================================================================
-abstract type AbstractRelaxationEulerEquations{NDIMS, NVARS} <: 
+
+abstract type AbstractHyperbolicEquations{NDIMS, NVARS} <:
               AbstractEquations{NDIMS, NVARS} end
 
-include("relaxation_euler_1d.jl")
-include("relaxation_euler_2d.jl")
+# ----------------------------------------------------------------------------
+# Relaxation Euler system with pressure law p = ρ^γ
+# ----------------------------------------------------------------------------
+
+abstract type AbstractRelaxationEulerEquations{NDIMS, NVARS} <:
+              AbstractHyperbolicEquations{NDIMS, NVARS} end
+
+include("relaxation_euler/relaxation_euler_1d.jl")
+include("relaxation_euler/relaxation_euler_2d.jl")
 
 @inline Base.show(io::IO, ::RelaxationEulerEquations1D) = print(io, "Relaxation Euler equations (1D)")
-
-# Euler Poisson Boltzmann
-abstract type AbstractEulerPoissonBoltzmann{NDIMS, NVARS} <: 
-    AbstractEquations{NDIMS, NVARS} end
-    
-include("euler_poisson_boltzmann_pressure_less_1d.jl")
-include("euler_poisson_boltzmann_pressure_less_2d.jl")
-    
 @inline Base.show(io::IO, ::RelaxationEulerEquations2D) = print(io, "Relaxation Euler equations (2D)")
 
 
+# ----------------------------------------------------------------------------
+# Euler-Pressure-Less
+# ----------------------------------------------------------------------------
+
+abstract type AbstractEulerPressureLessEquations{NDIMS, NVARS} <:
+              AbstractHyperbolicEquations{NDIMS, NVARS} end
+
+include("euler_poisson_boltzmann/euler_pressure_less_1d.jl")
+include("euler_poisson_boltzmann/euler_pressure_less_2d.jl")
+
+@inline Base.show(io::IO, ::EulerPoissonBoltzmann1D) = print(io, "Euler-Pressure-Less equations (1D)")
+@inline Base.show(io::IO, ::EulerPoissonBoltzmann2D) = print(io, "Euler-Pressure-Less equations (2D)")
+
+
+# ============================================================================
+# Elliptic equations
+# ============================================================================
+
+abstract type AbstractEllipticEquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+
+include("euler_poisson_boltzmann/poisson_boltzmann.jl")
+# include("elliptic/poisson_boltzmann_2d.jl")
+
+@inline Base.show(io::IO, ::PoissonBoltzmannEquations1D) = print(io, "Poisson-Boltzmann equation (1D)")
+@inline Base.show(io::IO, ::PoissonBoltzmannEquations2D) = print(io, "Poisson-Boltzmann equation (2D)")
 
 end # @muladd

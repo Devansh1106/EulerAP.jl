@@ -396,24 +396,58 @@ end
 
 @inline semi(context::CallbackContext) = context.simulation.semi
 
+# For 1D Cartesian Mesh 
+function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{1}, bcs::BoundaryConditions1D)
+    if mesh.periodicity[1]
+        if !(bcs.left isa PeriodicBC{1} &&
+             bcs.right isa PeriodicBC{1})
+
+            throw(ArgumentError(
+                "Periodic x-direction requires PeriodicBC on both left and right boundaries."))
+        end
+    end
+    return nothing
+end
+
+# For 2D Cartesian Mesh 
+function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{2}, bcs::BoundaryConditions2D)
+    if mesh.periodicity[1]
+        if !(bcs.left isa PeriodicBC{2} &&
+             bcs.right isa PeriodicBC{2})
+
+            throw(ArgumentError(
+                "Periodic x-direction requires PeriodicBC on both left and right boundaries."))
+        end
+    end
+
+    if mesh.periodicity[2]
+        if !(bcs.bottom isa PeriodicBC{2} &&
+             bcs.top isa PeriodicBC{2})
+
+            throw(ArgumentError(
+                "Periodic y-direction requires PeriodicBC on both bottom and top boundaries."))
+        end
+    end
+    return nothing
+end
+
+@inline Base.ndims(semi::AbstractSemidiscretization) = ndims(semi.mesh)
+
+
 # ============================================================================
 # Display
 # ============================================================================
 
-@inline Base.show(io::IO, ::PeriodicBC{1}) = print(io, "Periodic")
-
+# 1D 
+@inline Base.show(io::IO, ::PeriodicBC{1})  = print(io, "Periodic")
 @inline Base.show(io::IO, ::DirichletBC{1}) = print(io, "Dirichlet")
-
-@inline Base.show(io::IO, ::NeumannBC{1}) = print(io, "Neumann")
-
+@inline Base.show(io::IO, ::NeumannBC{1})   = print(io, "Neumann")
 @inline Base.show(io::IO, ::ExtrapolateBC{1}) = print(io, "Extrapolation")
 
-@inline Base.show(io::IO, ::PeriodicBC{2}) = print(io, "Periodic")
-
+# 2D
+@inline Base.show(io::IO, ::PeriodicBC{2})  = print(io, "Periodic")
 @inline Base.show(io::IO, ::DirichletBC{2}) = print(io, "Dirichlet")
-
-@inline Base.show(io::IO, ::NeumannBC{2}) = print(io, "Neumann")
-
+@inline Base.show(io::IO, ::NeumannBC{2})   = print(io, "Neumann")
 @inline Base.show(io::IO, ::ExtrapolateBC{2}) = print(io, "Extrapolation")
 
 end # @muladd

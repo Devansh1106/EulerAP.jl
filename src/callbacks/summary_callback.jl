@@ -5,6 +5,8 @@
 @muladd begin
 #! format: noindent
 
+using TimerOutputs
+
 """
     SummaryCallback()
 
@@ -110,8 +112,14 @@ function finalize!(::SummaryCallback,
     println()
     print_summary_line("Iterations completed", stats.iteration)
     print_summary_line("Final time", stats.time)
-    print_summary_line("Total runtime (s)", stats.total_runtime)
-    println("============================================================")
+    print_summary_line("Total runtime (s)",
+                       round(TimerOutputs.time(stats.timer["total_runtime"]) / 1e9; digits = 6))
+
+    # Report total allocations from the timer
+    total_alloc = TimerOutputs.allocated(stats.timer["total_runtime"])
+    print_summary_line("Total allocations (MiB)",
+                       round(total_alloc / 2^20; digits = 3))
+    # println("============================================================")
     println()
 
     return nothing

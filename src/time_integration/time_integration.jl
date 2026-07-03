@@ -6,6 +6,9 @@
 
 abstract type AbstractTimeIntegrator end
 
+# ======================================
+# ----------- Implicit Euler ----------- 
+# ======================================
 """
     ImplicitEulerCustom()
 
@@ -48,7 +51,38 @@ function solve(semi,
                                 callbacks=callbacks)
 end
 
+# TODO: add a solve() here for IMEXIntegrator
+
 # Used in Callbacks
 @inline integrator(context::CallbackContext) = context.simulation.integrator
+
+
+# ======================================
+# ----------- IMEXIntegrator ----------- 
+# ======================================
+
+abstract type AbstractIMEXStage end
+abstract type AbstractIMEXScheme end
+
+# Stages can be defined here
+struct ExplicitCorrectionStage <: AbstractIMEXStage end
+struct ImplicitCorrectionStage <: AbstractIMEXStage end
+struct ImplicitPredictionStage <: AbstractIMEXStage end
+
+# Schemes can be defined here
+struct FirstOrderThreeStagesIMEX <: AbstractIMEXScheme end
+
+# struct depatches on type of the scheme
+stages(::FirstOrderThreeStagesIMEX) = (
+    ExplicitCorrectionStage(),
+    ImplicitPredictionStage(),
+    ImplicitCorrectionStage(),
+)
+
+struct IMEXIntegrator{S <: AbstractIMEXScheme} <: AbstractTimeIntegrator
+    scheme::S
+end
+
+
 
 end # @muladd

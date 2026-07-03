@@ -2,20 +2,19 @@ module EulerAP
 
 using StaticArrays
 
-using SparseArrays
+using SparseArrays: spzeros, sparse
 using ForwardDiff
 
-using SciMLBase
-using OrdinaryDiffEq
-using NonlinearSolve
+using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution
+using NonlinearSolve: NonlinearFunction, NonlinearProblem, NewtonRaphson, NonlinearSolve
 
-using LinearSolve
 using Pardiso
+using LinearSolve: MKLPardisoFactorize
 
 using MuladdMacro
-using HDF5
-using RecipesBase
-using Printf
+using HDF5: h5open, create_group
+using Printf: @printf
+using TimerOutputs: TimerOutput, @timeit
 
 # --------------------------------------------------
 # Core infrastructure

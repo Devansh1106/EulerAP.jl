@@ -38,7 +38,7 @@ function SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver
                                       source_terms = nothing,
                                       boundary_conditions)
 
-    # @assert ndims(mesh) === ndims(equations)
+    @assert ndims(mesh) === ndims(equations)
     cache = create_cache(mesh, equations, solver)
     check_periodicity_mesh_boundary_conditions(mesh, boundary_conditions)
 
@@ -52,43 +52,6 @@ function SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver
                                                                        source_terms,
                                                                        solver, cache)    
 end
-
-# For 1D Cartesian Mesh 
-function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{1}, bcs::BoundaryConditions1D)
-    if mesh.periodicity[1]
-        if !(bcs.left isa PeriodicBC{1} &&
-             bcs.right isa PeriodicBC{1})
-
-            throw(ArgumentError(
-                "Periodic x-direction requires PeriodicBC on both left and right boundaries."))
-        end
-    end
-    return nothing
-end
-
-# For 2D Cartesian Mesh 
-function check_periodicity_mesh_boundary_conditions(mesh::CartesianMesh{2}, bcs::BoundaryConditions2D)
-    if mesh.periodicity[1]
-        if !(bcs.left isa PeriodicBC{2} &&
-             bcs.right isa PeriodicBC{2})
-
-            throw(ArgumentError(
-                "Periodic x-direction requires PeriodicBC on both left and right boundaries."))
-        end
-    end
-
-    if mesh.periodicity[2]
-        if !(bcs.bottom isa PeriodicBC{2} &&
-             bcs.top isa PeriodicBC{2})
-
-            throw(ArgumentError(
-                "Periodic y-direction requires PeriodicBC on both bottom and top boundaries."))
-        end
-    end
-    return nothing
-end
-
-@inline Base.ndims(semi::SemidiscretizationHyperbolic) = ndims(semi.mesh)
 
 @inline nvariables(semi::SemidiscretizationHyperbolic) = nvariables(semi.equations)
 
@@ -106,6 +69,6 @@ function rhs!(du_ode, u_ode,
     return nothing
 end
 
-@inline Base.show(io::IO, ::SemidiscretizationHyperbolic) = print(io, "Hyperbolic semidiscretization")
+@inline Base.show(io::IO, ::SemidiscretizationHyperbolic) = print(io, "Hyperbolic Semidiscretization")
 
 end # @muladd
