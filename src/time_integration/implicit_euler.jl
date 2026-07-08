@@ -6,8 +6,6 @@
 
 using TimerOutputs
 
-const linsolve = MKLPardisoFactorize()
-
 function backward_euler_residual!(F, u_new, u_old,
                                   semi::AbstractSemidiscretization,
                                   dt,

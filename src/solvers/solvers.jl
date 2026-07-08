@@ -18,6 +18,19 @@ function FVSolver(; flux, ndims::Int)
     )
 end
 
+# --------------------------------------------------
+# Implicit solver types for IMEX / fully implicit
+# --------------------------------------------------
+
+"""
+    EllipticSolver <: AbstractSolver
+
+Direct tridiagonal Newton solver for cell-centered implicit equations
+(e.g., the elliptic prediction step in the IMEX scheme).
+Specialized for single-variable tridiagonal systems in 1D.
+"""
+struct EllipticSolver <: AbstractSolver end
+
 
 """
     stencil_size(semi::AbstractSemidiscretization)

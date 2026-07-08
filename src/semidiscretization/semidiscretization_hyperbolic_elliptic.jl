@@ -16,8 +16,8 @@ struct SemidiscretizationHyperbolicElliptic{Mesh, Equations, EquationsElliptic,
                                             InitialCondition, 
                                             BoundaryConditions,
                                             BoundaryConditionsElliptic,
-                                            SourceTerms, SourceTermsElliptic 
-                                            Solver, SolverElliptic,
+                                            SourceTerms, SourceTermsElliptic, 
+                                            Solver,
                                             Cache, CacheElliptic} <: AbstractSemidiscretization
 
     mesh::Mesh
@@ -34,7 +34,6 @@ struct SemidiscretizationHyperbolicElliptic{Mesh, Equations, EquationsElliptic,
     source_terms_elliptic::SourceTermsElliptic
 
     solver::Solver
-    solver_elliptic::SolverElliptic
 
     cache::Cache
     cache_elliptic::CacheElliptic
@@ -63,11 +62,12 @@ The hyperbolic operator is discretized using the finite-volume solver,
 while the elliptic equation is handled by the specified elliptic solver.
 """
 function SemidiscretizationHyperbolicElliptic(mesh,
-                                              equations::NamedTuple,
+                                              equations::Tuple,
                                               initial_condition,
                                               solver;
-                                              elliptic_solver,
                                               source_terms = nothing,
+                                              elliptic_solver = EllipticSolver(),
+                                              source_terms_elliptic = nothing,
                                               boundary_conditions)
 
     hyperbolic_equations, elliptic_equations = equations
@@ -80,7 +80,7 @@ function SemidiscretizationHyperbolicElliptic(mesh,
 
     elliptic_cache = create_elliptic_cache(mesh,
                                            elliptic_equations,
-                                           elliptic_solver)
+                                           EllipticSolver())
 
     check_periodicity_mesh_boundary_conditions(mesh, hyperbolic_bc)
     check_periodicity_mesh_boundary_conditions(mesh, elliptic_bc)
@@ -92,8 +92,8 @@ function SemidiscretizationHyperbolicElliptic(mesh,
                                                 typeof(hyperbolic_bc),
                                                 typeof(elliptic_bc),
                                                 typeof(source_terms),
+                                                typeof(source_terms_elliptic),
                                                 typeof(solver),
-                                                typeof(elliptic_solver),
                                                 typeof(cache),
                                                 typeof(elliptic_cache)}(mesh,
                                                                         hyperbolic_equations,
@@ -102,29 +102,96 @@ function SemidiscretizationHyperbolicElliptic(mesh,
                                                                         hyperbolic_bc,
                                                                         elliptic_bc,
                                                                         source_terms,
+                                                                        source_terms_elliptic,
                                                                         solver,
-                                                                        elliptic_solver,
                                                                         cache,
                                                                         elliptic_cache)
 end
 
-@inline nvariables(semi::SemidiscretizationHyperbolicElliptic) = nvariables(semi.equations) + 1 # +1 is for Φ from Poisson-Boltzmann
+@inline nvariables(semi::SemidiscretizationHyperbolicElliptic) = nvariables(semi.equations) + 1
+@inline Base.show(io::IO, ::SemidiscretizationHyperbolicElliptic) = print(io, "Hyperbolic-Elliptic Semidiscretization")
 
-# SciML rhs! function
-function rhs!(du_ode, u_ode, 
-              semi::SemidiscretizationHyperbolicElliptic,
-              t)
+# ============================================================================
+# Elliptic ghost value helper (for IMEX scheme)
+# ============================================================================
 
-    # defined in solvers/ folder
-    rhs!(du_ode, u_ode,
-         semi.solver,
-         semi,
-         t)
+"""
+    elliptic_ghost_value(x_elliptic, i, nx, semi, t)
 
-    return nothing
+Return the ghost cell value for the elliptic variable at index `i`
+(which is outside the domain `1:nx`), using the elliptic boundary
+conditions stored in `semi.boundary_conditions_elliptic`.
+"""
+@inline function elliptic_ghost_value(x_elliptic, i, nx, semi, t)
+    bc = semi.boundary_conditions_elliptic
+
+    if i < 1
+        # Left boundary
+        side_bc = bc.left
+        if isa(side_bc, PeriodicBC)
+            return x_elliptic[_wrap_index(i, nx)]
+        elseif isa(side_bc, DirichletBC)
+            x = coordinates(CartesianIndex(1), semi.mesh)
+            return side_bc.boundary_value(x, t, semi.equations_elliptic)
+        elseif isa(side_bc, NeumannBC)
+            interior = x_elliptic[1]
+            grad = side_bc.boundary_gradient(coordinates(CartesianIndex(1), semi.mesh),
+                                             t, semi.equations_elliptic)
+            grad = first(grad)
+            return interior + semi.mesh.dx[1] * grad
+        else
+            # ExtrapolateBC or default: copy interior
+            return x_elliptic[1]
+        end
+    else
+        # Right boundary
+        side_bc = bc.right
+        if isa(side_bc, PeriodicBC)
+            return x_elliptic[_wrap_index(i, nx)]
+        elseif isa(side_bc, DirichletBC)
+            x = coordinates(CartesianIndex(nx), semi.mesh)
+            return side_bc.boundary_value(x, t, semi.equations_elliptic)
+        elseif isa(side_bc, NeumannBC)
+            interior = x_elliptic[nx]
+            grad = side_bc.boundary_gradient(coordinates(CartesianIndex(nx), semi.mesh),
+                                             t, semi.equations_elliptic)
+            grad = first(grad)
+            return interior + semi.mesh.dx[1] * grad
+        else
+            # ExtrapolateBC or default: copy interior
+            return x_elliptic[nx]
+        end
+    end
 end
 
-@inline Base.show(io::IO, ::SemidiscretizationHyperbolicElliptic) = print(io, "Hyperbolic-Elliptic Semidiscretization")
+@inline function _hyperbolic_ghost_state(u_hyper, I::CartesianIndex{NDIMS}, semi, t) where {NDIMS}
+    side = boundary_side(I, semi)
+    if side !== nothing
+        bc = getproperty(semi.boundary_conditions, side)
+        if bc isa PeriodicBC
+            I = CartesianIndex(ntuple(d -> _wrap_index(I[d], size(semi.mesh, d)), NDIMS))
+        end
+    end
+    return cell_state(u_hyper, I, semi, t)
+end
+
+@inline function _elliptic_var(x_elliptic,
+                               I::CartesianIndex{NDIMS},
+                               semi,
+                               t) where {NDIMS}
+
+    i = cell_index(I, semi)
+
+    if 1 <= i <= length(x_elliptic)
+        @inbounds return x_elliptic[i]
+    else
+        return elliptic_ghost_value(x_elliptic,
+                                    i,
+                                    length(x_elliptic),
+                                    semi,
+                                    t)
+    end
+end
 
 
 end # @muladd

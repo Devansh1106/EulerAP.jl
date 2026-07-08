@@ -9,6 +9,13 @@
 @inline nvariables(::AbstractEquations{NDIMS, NVARS}) where {NDIMS, NVARS} = NVARS
 
 # ============================================================================
+# Combined hyperbolic-elliptic equations
+# ============================================================================
+
+abstract type AbstractEulerPoissonBoltzmannEquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+
+# ============================================================================
 # Hyperbolic equations
 # ============================================================================
 
@@ -39,8 +46,8 @@ abstract type AbstractEulerPressureLessEquations{NDIMS, NVARS} <:
 include("euler_poisson_boltzmann/euler_pressure_less_1d.jl")
 include("euler_poisson_boltzmann/euler_pressure_less_2d.jl")
 
-@inline Base.show(io::IO, ::EulerPoissonBoltzmann1D) = print(io, "Euler-Pressure-Less equations (1D)")
-@inline Base.show(io::IO, ::EulerPoissonBoltzmann2D) = print(io, "Euler-Pressure-Less equations (2D)")
+@inline Base.show(io::IO, ::EulerPressureLess1D) = print(io, "Euler-Pressure-Less equations (1D)")
+@inline Base.show(io::IO, ::EulerPressureLess2D) = print(io, "Euler-Pressure-Less equations (2D)")
 
 
 # ============================================================================
@@ -50,10 +57,11 @@ include("euler_poisson_boltzmann/euler_pressure_less_2d.jl")
 abstract type AbstractEllipticEquations{NDIMS, NVARS} <:
               AbstractEquations{NDIMS, NVARS} end
 
-include("euler_poisson_boltzmann/poisson_boltzmann.jl")
-# include("elliptic/poisson_boltzmann_2d.jl")
+abstract type AbstractPoissonBoltzmannEquations{NDIMS, NVARS} <:
+              AbstractEllipticEquations{NDIMS, NVARS} end
 
-@inline Base.show(io::IO, ::PoissonBoltzmannEquations1D) = print(io, "Poisson-Boltzmann equation (1D)")
-@inline Base.show(io::IO, ::PoissonBoltzmannEquations2D) = print(io, "Poisson-Boltzmann equation (2D)")
+include("euler_poisson_boltzmann/euler_poisson_boltzmann.jl")
+
+@inline Base.show(io::IO, ::PoissonBoltzmann) = print(io, "Poisson-Boltzmann equation (1D)")
 
 end # @muladd

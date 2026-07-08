@@ -12,8 +12,8 @@ end
 
 # outer constructor for matching the type of values using promote()
 function EulerPressureLess1D(; gamma)
-    γ = promote(gamma)
-    return EulerPressureLess1D{typeof{γ}}(γ)
+    γ, = promote(gamma)
+    return EulerPressureLess1D{typeof(γ)}(γ)
 end
 
 @inline function flux(u::SVector{3}, orientation, 
@@ -31,10 +31,10 @@ end
 # Source term
 # --------------------------------------------------
 
-@inline function source_terms(u, equations::EulerPressureLess1D)
+@inline function source_terms_hyperbolic(u, equations::EulerPressureLess1D)
     # ρ_t += 0
-    # m_t += 
-    return SVector(zero(u[1]), -u[2] * equations.inv_epsilon)
+    # m_t += 0 (no source term for pressure-less Euler)
+    return SVector(zero(u[1]), zero(u[1]))
 end
 
 end # @muladd

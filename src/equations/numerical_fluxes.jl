@@ -7,6 +7,12 @@
 
 # This file contains general numerical fluxes that are not specific to certain equations
 
+# Euler-Poisson-Boltzmann flux returns two quantities at the interface.
+struct EPBInterfaceContribution{TF,T}
+    flux::TF
+    source::T
+end
+
 # Add more flux types as they are added into the code
 struct FluxRusanov end
 
@@ -28,7 +34,7 @@ end
 Rusanov numerical flux for a face normal to the `orientation`-th axis.
 `dt` and `dx` are accepted for interface compatibility with `FluxEnergyStable` but ignored.
 """
-@inline function (flux_::FluxRusanov)(u_ll, u_rr, orientation, equations::AbstractEquations, dt, dx=nothing)
+@inline function (flux_::FluxRusanov)(u_ll, u_rr, orientation, equations::AbstractHyperbolicEquations, dt, dx=nothing)
 
     # Defined in speific equations/ files
     flux_ll = flux(u_ll,
@@ -54,7 +60,7 @@ Energy-stable numerical flux for the relaxation Euler system, normal to the
 `dt` is the time-step size used to compute the diffusion coefficient `eta * dt`.
 `dx` is accepted for interface compatibility with other flux types but ignored.
 """
-@inline function (flux_::FluxEnergyStable)(u_ll, u_rr, orientation, equations::AbstractEquations, dt, dx=nothing)
+@inline function (flux_::FluxEnergyStable)(u_ll, u_rr, orientation, equations::AbstractHyperbolicEquations, dt, dx=nothing)
     # Extract equation parameters
     gamma = equations.gamma
     eps   = equations.epsilon
@@ -117,8 +123,15 @@ end
 # --------------------------------------------------
 # Energy-stable flux for Euler-Poisson-Boltzmann
 # --------------------------------------------------
-# State vector layout: (rho, m_1, ..., m_NDIMS, Phi)
-# where Phi is the electric potential (last component).
+# Hyperbolic state:
+#
+#     u = (ρ, m₁, ..., m_NDIMS)
+#
+# Electric potential:
+#
+#     ϕ
+#
+# is passed separately since it belongs to the elliptic subsystem.
 #
 # Density flux:
 #   F^1_{i+1/2} = rho_half * (vel_r - vel_l) / 2
@@ -128,80 +141,108 @@ end
 #   F^2_{i+1/2} = vel_l * (F^1)^+ + vel_r * (F^1)^-
 #
 # where (·)^+ = max(·, 0), (·)^- = max(-·, 0), vel = m/rho.
-@inline function (flux_::FluxEnergyStable)(u_ll, u_rr, orientation,
-                                           equations::AbstractEulerPoissonBoltzmannEquations,
-                                           dt, dx)
+# --------------------------------------------------
+# Energy-stable flux for Euler-Poisson-Boltzmann
+# --------------------------------------------------
+# TODO: We can separate interface source term into a new function call than the current implementation
+# where are returning it in flux itself using `EPBInterfaceContribution` struct.
+@inline function (flux_::FluxEnergyStable)(
+    u_ll,
+    u_rr,
+    phi_ll,
+    phi_rr,
+    orientation,
+    equations::AbstractHyperbolicEquations,
+    dt,
+    dx)
 
-    gamma = equations.gamma
-    eta_diff_t = flux_.eta * dt
-
-    # Left / right density
-    rho_l = u_ll[1]
-    rho_r = u_rr[1]
-
-    # Normal velocity
-    vel_l = u_ll[1 + orientation] / rho_l
-    vel_r = u_rr[1 + orientation] / rho_r
-
-    # Electric potential (last component of state)
-    Phi_l = u_ll[end]
-    Phi_r = u_rr[end]
+    eta_dt = flux_.eta * dt
 
     # --------------------------------------------------
-    # rho_half = (gamma - 1)/gamma * (rho_r^gamma - rho_l^gamma)
-    #           / (rho_r^(gamma-1) - rho_l^(gamma-1))
+    # Left / right states
     # --------------------------------------------------
-    P_l = rho_l^gamma
-    P_r = rho_r^gamma
-    avg = 0.5 * (rho_l + rho_r)
 
-    f = (rho_r - rho_l) / (rho_r + rho_l)
-    ν = f * f
+    rho_ll = u_ll[1]
+    rho_rr = u_rr[1]
 
-    if ν < 1e-8
-        # Taylor expansion to avoid near-zero denominator
-        c1 = (gamma - 2.0) / 3.0
-        c2 = -(gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) / 45.0
-        c3 = (gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) * (2.0 * gamma * (gamma - 2.0) - 9.0) / 945.0
-        rho_half = avg * (1.0 + ν * (c1 + ν * (c2 + ν * c3)))
-    else
-        denom = rho_r^(gamma - 1.0) - rho_l^(gamma - 1.0)
-        rho_half = (gamma - 1.0) / gamma * (rho_r^gamma - rho_l^gamma) / denom
-    end
+    vel_ll = u_ll[1 + orientation] / rho_ll
+    vel_rr = u_rr[1 + orientation] / rho_rr
 
     # --------------------------------------------------
-    # First flux (density)
+    # Interface density
     # --------------------------------------------------
-    F_rho = rho_half * 0.5 * (vel_r - vel_l) - (Phi_r - Phi_l) * eta_diff_t / dx
+
+    rho_half = gamma_mean(
+        rho_ll,
+        rho_rr,
+        equations.gamma
+    )
 
     # --------------------------------------------------
-    # Upwind splitting for momentum flux
+    # Density flux
     # --------------------------------------------------
-    Fp = max(F_rho, 0.0)
-    Fm = max(-F_rho, 0.0)
+
+    F_rho =
+        rho_half *
+        0.5 *
+        (vel_rr - vel_ll) -
+        eta_dt *
+        (phi_rr - phi_ll) / dx
 
     # --------------------------------------------------
-    # Assemble full flux vector
+    # Upwind splitting
     # --------------------------------------------------
-    # The Phi component (last component) is not advected by the hyperbolic flux;
-    # we pass through the state value so the FV divergence produces zero net change
-    # for Phi from the explicit hyperbolic step. Phi is updated by the implicit
-    # solver separately.
+
+    Fp = max(F_rho, zero(F_rho))
+    Fm = max(-F_rho, zero(F_rho))
+
+    # --------------------------------------------------
+    # Hyperbolic numerical flux
+    # --------------------------------------------------
+
     N = length(u_ll)
     components = ntuple(N) do k
         if k == 1
             return F_rho
         elseif k == 1 + orientation
-            # Normal momentum flux
-            return Fp * vel_l + Fm * vel_r
+            return Fp * vel_ll +
+                   Fm * vel_rr
         else
-            # Transverse momentum or Phi: pass-through (no explicit hyperbolic update)
-            return u_ll[k]
+            # Transverse momentum components
+            v_ll = u_ll[k] / rho_ll
+            v_rr = u_rr[k] / rho_rr
+
+            return Fp * v_ll +
+                   Fm * v_rr
         end
     end
-
-    return SVector{N}(components)
+    interface_source = rho_half * (phi_rr - phi_ll) / dx
+    return EPBInterfaceContribution(
+        SVector{N}(components),
+        interface_source
+    )
 end
 
+# --------------------------------------------------
+# Gamma-mean (logarithmic mean of ρ^γ)
+# --------------------------------------------------
+# Computes ρ̄ = (γ-1)/γ * (ρ_r^γ - ρ_l^γ) / (ρ_r^{γ-1} - ρ_l^{γ-1})
+# with Taylor expansion for near-equal densities to avoid division by zero.
+@inline function gamma_mean(rho_l, rho_r, gamma)
+    avg = 0.5 * (rho_l + rho_r)
+    f = (rho_r - rho_l) / (rho_r + rho_l)
+    ν = f * f
+
+    if ν < 1e-8
+        # Taylor expansion
+        c1 = (gamma - 2.0) / 3.0
+        c2 = -(gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) / 45.0
+        c3 = (gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) * (2.0 * gamma * (gamma - 2.0) - 9.0) / 945.0
+        return avg * (1.0 + ν * (c1 + ν * (c2 + ν * c3)))
+    else
+        denom = rho_r^(gamma - 1.0) - rho_l^(gamma - 1.0)
+        return (gamma - 1.0) / gamma * (rho_r^gamma - rho_l^gamma) / denom
+    end
+end
 
 end # @muladd

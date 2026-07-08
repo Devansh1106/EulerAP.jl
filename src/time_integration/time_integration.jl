@@ -4,6 +4,8 @@
 @muladd begin
 #! format: noindent
 
+const linsolve = MKLPardisoFactorize()
+
 abstract type AbstractTimeIntegrator end
 
 # ======================================
@@ -72,17 +74,84 @@ struct ImplicitPredictionStage <: AbstractIMEXStage end
 # Schemes can be defined here
 struct FirstOrderThreeStagesIMEX <: AbstractIMEXScheme end
 
-# struct depatches on type of the scheme
-stages(::FirstOrderThreeStagesIMEX) = (
+"""
+    stages(scheme)
+
+Return the ordered tuple of stages executed by an IMEX scheme.
+"""
+function stages end
+
+@inline stages(::FirstOrderThreeStagesIMEX) = (
     ExplicitCorrectionStage(),
     ImplicitPredictionStage(),
     ImplicitCorrectionStage(),
 )
 
+"""
+    IMEXIntegrator{S} <: AbstractTimeIntegrator
+
+IMEX time integrator carrying the scheme (e.g., `FirstOrderThreeStagesIMEX`).
+The elliptic solve uses a hand-coded Thomas algorithm via NonlinearSolve.jl.
+"""
 struct IMEXIntegrator{S <: AbstractIMEXScheme} <: AbstractTimeIntegrator
     scheme::S
 end
 
+"""
+    IMEXCache
 
+Cache storing the intermediate solution states required by an IMEX
+time integration method.
 
+The cache owns only algorithmic states. Solver-specific workspaces
+(e.g. Newton residuals, Jacobians, Krylov vectors) are owned by the
+`EllipticCache`(@ref).
+"""
+struct IMEXCache{TU,TP, TR, TW}
+    # Current solution u^n
+    u::TU
+
+    rho_hat::TR
+
+    # Corrected solution u^{n+1}
+    u_new::TW
+
+    # Hyperbolic work buffer
+    u_buffer::TW
+
+    # Elliptic solution ϕ^{n+1}
+    phi::TP
+
+end
+
+function IMEXCache(u0, phi0)
+    # since rho_hat is 1 scalar per cell same as phi0
+    rho_hat = similar(phi0)
+    T = eltype(u0)
+    n = length(u0)
+    IMEXCache(u0,
+              rho_hat,
+              Vector{T}(undef, n),
+              Vector{T}(undef, n),
+              phi0)
+end
+
+"""
+    solve(semi, tspan, integrator::IMEXIntegrator;
+          dt, callbacks=CallbackSet())
+
+Advance the semidiscretization using the IMEX solver.
+"""
+function solve(semi,
+               tspan,
+               integrator::IMEXIntegrator;
+               dt = minimum_cell_size(semi.mesh),
+               callbacks=CallbackSet())
+
+    return solve_imex(semi,
+                      integrator,
+                      tspan;
+                      dt = dt,
+                      callbacks=callbacks)
+end
 end # @muladd

@@ -2,6 +2,7 @@ module EulerAP
 
 using StaticArrays
 
+using LinearAlgebra: Tridiagonal
 using SparseArrays: spzeros, sparse
 using ForwardDiff
 
@@ -43,7 +44,7 @@ include("semidiscretization/semidiscretization.jl")
 
 include("semidiscretization/semidiscretization_hyperbolic.jl")
 
-
+include("semidiscretization/semidiscretization_hyperbolic_elliptic.jl")
 
 # Numerical fluxes must be included before solvers
 include("equations/numerical_fluxes.jl")
@@ -60,6 +61,7 @@ include("solvers/fv_2d.jl")
 include("time_integration/time_integration.jl")
 
 include("time_integration/implicit_euler.jl")
+include("time_integration/imex.jl")
 
 # --------------------------------------------------
 # IO
@@ -94,6 +96,9 @@ export CartesianMesh
 # Equations
 export RelaxationEulerEquations1D
 export RelaxationEulerEquations2D
+export EulerPressureLess1D
+export EulerPressureLess2D
+export PoissonBoltzmann
 
 # Numerical Fluxes
 export FluxRusanov
@@ -101,6 +106,7 @@ export FluxEnergyStable
 
 # Solvers
 export FVSolver
+export EllipticSolver
 
 # Boundary Conditions
 export BoundaryConditions1D
@@ -111,6 +117,7 @@ export NeumannBC
 export ExtrapolateBC
 
 # Semidiscretizations
+export SemidiscretizationHyperbolicElliptic
 export SemidiscretizationHyperbolic
 export semidiscretize
 export solve
@@ -118,6 +125,11 @@ export solve
 # Time Integrators
 export AbstractTimeIntegrator
 export ImplicitEulerCustom
+export IMEXIntegrator
+export FirstOrderThreeStagesIMEX
+export ExplicitCorrectionStage
+export ImplicitCorrectionStage
+export ImplicitPredictionStage
 
 # Solutions
 export EulerAPSolution
@@ -126,14 +138,21 @@ export EulerAPSolution
 export save_solution
 export save_initial_condition
 
-# Initial conditions & source terms
+# Initial conditions
+# Relaxation Euler
 export initial_condition_riemann
 export initial_condition_single_box
 export initial_condition_double_box
 export initial_condition_sinosidal
 export initial_condition_sinosidal_riemann
 export initial_condition_barenblatt
+# EPB system
+export initial_condition_riemann_epb
+
+# Source terms
 export source_terms
+export source_terms_hyperbolic
+
 
 # Postprocessing
 export compute_errors

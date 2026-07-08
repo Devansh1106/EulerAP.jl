@@ -19,6 +19,49 @@ struct EulerAPSolution{TU,T}
     t::T
 end
 
+
+"""
+    EllipticCache
+
+Cache storing pre-allocated arrays for the elliptic implicit solver in the IMEX scheme.
+All arrays avoid re-allocation on every time step.
+"""
+struct EllipticCache{TV,TJ}
+
+    # Thomas algorithm work arrays
+    dl::TV
+    d::TV
+    du::TV
+
+    # Nonlinear residual
+    residual::TV
+
+    # Jacobian prototype
+    jacobian::TJ
+end
+
+function create_elliptic_cache(mesh::CartesianMesh{1},
+                               equations_elliptic::AbstractEquations,
+                               solver_elliptic)
+
+    nx = ncells(mesh)
+    T = eltype(mesh.dx)
+
+    jacobian = Tridiagonal(
+        zeros(T, nx - 1),
+        zeros(T, nx),
+        zeros(T, nx - 1),
+    )
+
+    return EllipticCache(
+        zeros(T, nx),      # dl
+        zeros(T, nx),      # d
+        zeros(T, nx),      # du
+        zeros(T, nx),      # residual
+        jacobian,
+    )
+end
+
 mutable struct FVCache{TJacobian, TPosition, TX, TY, TJlocal, TResidualBuffer}
     # Jacobian infrastructure
     jac_prototype::TJacobian
@@ -373,10 +416,19 @@ The global state vector is stored in cell-major ordering.
 function initial_condition(t,
                            semi::AbstractSemidiscretization)
 
-    mesh      = semi.mesh
-    equations = semi.equations
+    mesh = semi.mesh
+    nvars = nvariables(semi)
 
-    nvars = nvariables(equations)
+    # TODO: Need to settle this. This is a temporary setup by calling IC for EPB system on EulerPressureLess1D type which should be changed to a common type for EPB system (hyper+elliptic)
+    # # For coupled hyperbolic-elliptic systems, pass the semidiscretization
+    # # so initial conditions can return the full state (including elliptic vars).
+    # # For purely hyperbolic systems, pass just the equations.
+    # if semi isa SemidiscretizationHyperbolicElliptic
+    #     eq_or_semi = semi
+    # else
+    #     eq_or_semi = semi.equations
+    # end
+
     T = eltype(mesh.dx)
     u0 = zeros(T, nvars * ndofs(mesh))
 
@@ -384,7 +436,7 @@ function initial_condition(t,
         cell = cell_index(I, semi)
         x = coordinates(I, mesh)
 
-        state = semi.initial_condition(x, t, equations)
+        state = semi.initial_condition(x, t, semi.equations)
 
         @inbounds for v in 1:nvars
             u0[global_dof(cell, v, nvars)] = state[v]
