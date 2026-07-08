@@ -46,7 +46,11 @@ function read_solution_1d(filepath::String)
 
     h5open(filepath, "r") do f
         # ---- convenience top-level attributes ----
-        eps_str = read(f, "eps")
+        if haskey(f, "eps")
+            eps_str = read(f, "eps")
+        else
+            eps_str = read(f, "equations/lambda")
+        end
         data["eps"] = eps_str
 
         mesh_str = read(f, "ncells")
