@@ -335,6 +335,12 @@ function build_jacobian_cache!(semi::AbstractSemidiscretization)
                 end
                 neighbor_cell = cell_index(neighbor, mesh)
 
+                # Skip ghost cells outside domain (e.g. DirichletBC ghost cells at index 0 or nx+1).
+                # Their state does not depend on interior DOFs, so they contribute zero to the Jacobian.
+                if neighbor_cell < 1 || neighbor_cell > ncells
+                    continue
+                end
+
                 for col_var in 1:nvars
                     col = global_dof(neighbor_cell, col_var, nvars)
                     push!(I, row)
@@ -367,6 +373,11 @@ function build_jacobian_cache!(semi::AbstractSemidiscretization)
                     continue
                 end
                 neighbor_cell = cell_index(neighbor, mesh)
+
+                # Skip ghost cells outside domain (same as sparsity pattern building above)
+                if neighbor_cell < 1 || neighbor_cell > ncells
+                    continue
+                end
 
                 for col_var in 1:nvars
                     col = global_dof(neighbor_cell, col_var, nvars)

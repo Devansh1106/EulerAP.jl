@@ -11,7 +11,7 @@ mesh = CartesianMesh(
     # periodicity = (true,)
 )
 lambda = 1e0
-tspan = (0.0, 0.15)
+tspan = (0.0, 0.1)
 
 # --------------------------------------------------
 # Equations

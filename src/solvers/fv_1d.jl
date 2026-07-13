@@ -45,7 +45,7 @@ function neighbor_index(I::CartesianIndex{1},
 
     elseif bc isa DirichletBC
         # Ghost state independent of interior state
-        return CartesianIndex(0)
+        return CartesianIndex(shifted)
 
     else
         error("Unknown boundary condition type $(typeof(bc))")
