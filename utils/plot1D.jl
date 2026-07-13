@@ -3,7 +3,8 @@
     plot1D.jl
 
 Read one or more 1D HDF5 solution files (new format with top-level `eps`
-and `ncells` scalars) and plot density & velocity profiles on the same figure.
+and `ncells` scalars) and plot density, velocity, and electric potential
+profiles on the same figure.
 
 The first file is treated as the **initial condition** (plotted with a dashed
 black line).  Subsequent files are **final solutions** and are distinguished
@@ -41,6 +42,13 @@ const LINE_STYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
 const LINE_COLORS = [:black, :red, :blue, :green, :orange, :purple, :brown,
                      :pink, :olive, :cyan, :magenta, :navy]
 
+"""
+    read_solution_1d(filepath::String) -> Dict
+
+Read a 1D HDF5 solution file and return a dictionary containing all available
+variables. Supports 2 variables (hyperbolic: ρ, m) or 3 variables
+(Euler-Poisson-Boltzmann: ρ, m, φ).
+"""
 function read_solution_1d(filepath::String)
     data = Dict{String, Any}()
 
@@ -77,14 +85,24 @@ function read_solution_1d(filepath::String)
         t = read(f, "metadata/time")
         data["t"] = t
 
+        nvars = read(f, "metadata/nvariables")
+        data["nvars"] = nvars
+
         # ---- solution ----
-        u = read(f, "solution/u")           # shape (nvars, ndofs)
+        # u has shape (nvars, ndofs) in interleaved layout
+        u = read(f, "solution/u")
         rho = u[1, :]
         mx  = u[2, :]
-        ux  = mx ./ rho
 
         data["rho"] = rho
-        data["ux"]  = ux
+        data["mx"] = mx
+        data["ux"] = mx ./ rho
+
+        # Electric potential (EPB systems have 3+ variables)
+        if nvars >= 3
+            phi = u[3, :]
+            data["phi"] = phi
+        end
     end
 
     return data
@@ -122,6 +140,9 @@ function main()
     # Remaining files are final solutions
     final_files = [read_solution_1d(input_files[i]) for i in 2:nfiles]
     nfinal = length(final_files)
+
+    # Determine number of variables (assume consistent across files)
+    nvars = init["nvars"]
 
     # ------------------------------------------------------------------
     # Determine what varies across final files -> legend vs title
@@ -212,7 +233,7 @@ function main()
     # ------------------------------------------------------------------
     # Velocity subplot
     # ------------------------------------------------------------------
-    p2 = plot(xlabel = "x", ylabel = "u_x", title = "Velocity")
+    p2 = plot(xlabel = "x", ylabel = "uₓ", title = "Velocity")
 
     # Initial condition from first file (dashed black)
     plot!(p2, init["x"], init["ux"],
@@ -228,7 +249,35 @@ function main()
               label = legend_labels[i])
     end
 
-    fig = plot(p1, p2, layout = (1, 2), size = (1400, 550),
+    # ------------------------------------------------------------------
+    # Electric potential subplot (if 3+ variables)
+    # ------------------------------------------------------------------
+    nrows = nvars >= 3 ? 3 : 2
+    plots = [p1, p2]
+
+    if nvars >= 3
+        p3 = plot(xlabel = "x", ylabel = "φ", title = "Electric Potential")
+
+        # Initial condition from first file (dashed black)
+        plot!(p3, init["x"], init["phi"],
+              lw = 2, ls = :dash, color = :black,
+              label = "Initial")
+
+        # Final states from remaining files
+        for (i, f) in enumerate(final_files)
+            if haskey(f, "phi")
+                ls = LINE_STYLES[(i - 1) % length(LINE_STYLES) + 1]
+                lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
+                plot!(p3, f["x"], f["phi"],
+                      lw = 2, ls = ls, color = lc,
+                      label = legend_labels[i])
+            end
+        end
+
+        push!(plots, p3)
+    end
+
+    fig = plot(plots..., layout = (1, nrows), size = (500 * nrows, 550),
                plot_title = plot_title)
 
     savefig(fig, out_path)

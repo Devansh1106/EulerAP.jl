@@ -10,8 +10,8 @@ mesh = CartesianMesh(
     (2.0*π,)
     # periodicity = (true,)
 )
-lambda = 1e-2
-tspan = (0.0, 0.2)
+lambda = 1e0
+tspan = (0.0, 0.15)
 
 # --------------------------------------------------
 # Equations

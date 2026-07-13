@@ -3,8 +3,8 @@
     plot2D.jl
 
 Read one or more 2D HDF5 solution files (new format with top-level `eps`
-and `ncells` scalars) and plot density, velocity_x, and velocity_y as
-2D heatmaps.
+and `ncells` scalars) and plot density, velocity_x, velocity_y, and electric
+potential (if present) as 2D heatmaps.
 
 The first file is treated as the **initial condition** (shown in the first
 column).  Subsequent files are **final solutions** and are shown in the
@@ -14,6 +14,7 @@ Layout:
     Row 1: Density (ρ)        — heatmap
     Row 2: Velocity X (u_x)   — heatmap
     Row 3: Velocity Y (u_y)   — heatmap
+    Row 4: Electric Potential (φ) — heatmap (if nvars ≥ 4)
     Col 1: Initial state      — labeled "Initial"
     Col 2..N: Final states    — labeled by the varying parameter (ε / mesh / t)
 
@@ -65,26 +66,40 @@ function read_solution_2d(filepath::String)
         # ---- metadata ----
         data["t"] = read(f, "metadata/time")
 
+        nvars = read(f, "metadata/nvariables")
+        data["nvars"] = nvars
+
         # ---- solution ----
         # u has shape (nvars, ndofs), ndofs = Nx * Ny
         # Flat index: idx = i + (j-1)*Nx  (column-major, i fastest)
         u_full = read(f, "solution/u")    # (nvars, Nx*Ny)
         rho_flat = u_full[1, :]
         mx_flat  = u_full[2, :]
-        my_flat  = u_full[3, :]
 
         # Reshape to (Nx, Ny) — column-major means it maps to (i, j) correctly.
         rho = reshape(rho_flat, Nx, Ny)
         mx  = reshape(mx_flat,  Nx, Ny)
-        my  = reshape(my_flat,  Nx, Ny)
 
         ux = mx ./ rho
-        uy = my ./ rho
 
         # Transpose for heatmap display (x horizontal, y vertical)
         data["rho_2d"] = rho'
         data["ux_2d"]  = ux'
-        data["uy_2d"]  = uy'
+
+        # 2D hyperbolic system has 3 variables (ρ, m_x, m_y)
+        if nvars >= 3
+            my_flat = u_full[3, :]
+            my = reshape(my_flat, Nx, Ny)
+            uy = my ./ rho
+            data["uy_2d"] = uy'
+        end
+
+        # EPB systems may have 4+ variables (ρ, m_x, m_y, φ)
+        if nvars >= 4
+            phi_flat = u_full[4, :]
+            phi = reshape(phi_flat, Nx, Ny)
+            data["phi_2d"] = phi'
+        end
     end
 
     return data
@@ -122,6 +137,9 @@ function main()
     # Remaining files are final solutions
     final_files = [read_solution_2d(input_files[i]) for i in 2:nfiles]
     nfinal = length(final_files)
+
+    # Determine number of variables (assume consistent across files)
+    nvars = init["nvars"]
 
     # ------------------------------------------------------------------
     # Determine what varies across final files -> legend vs title
@@ -192,27 +210,48 @@ function main()
 
     # ------------------------------------------------------------------
     # Build figure with heatmap subplots
-    # Layout: 3 rows (ρ, u_x, u_y) × (1 + nfinal) columns
+    # Layout: rows (ρ, u_x, u_y, φ) × (1 + nfinal) columns
     # ------------------------------------------------------------------
     total_cols = 1 + nfinal
-    total_rows = 3
+
+    # Determine number of rows based on available variables
+    total_rows = 2  # Default: ρ and u only
+    if nvars >= 3
+        total_rows = 3  # Add u_y
+    end
+    if nvars >= 4
+        total_rows = 4  # Add φ
+    end
 
     # Shared axis limits for side-by-side comparability
-    if nfinal > 0
-        rho_min = min(minimum(init["rho_2d"]), minimum(minimum(f["rho_2d"]) for f in final_files))
-        rho_max = max(maximum(init["rho_2d"]), maximum(maximum(f["rho_2d"]) for f in final_files))
-        ux_min  = min(minimum(init["ux_2d"]),  minimum(minimum(f["ux_2d"])  for f in final_files))
-        ux_max  = max(maximum(init["ux_2d"]),  maximum(maximum(f["ux_2d"])  for f in final_files))
-        uy_min  = min(minimum(init["uy_2d"]),  minimum(minimum(f["uy_2d"])  for f in final_files))
-        uy_max  = max(maximum(init["uy_2d"]),  maximum(maximum(f["uy_2d"])  for f in final_files))
-    else
-        rho_min = minimum(init["rho_2d"])
-        rho_max = maximum(init["rho_2d"])
-        ux_min  = minimum(init["ux_2d"])
-        ux_max  = maximum(init["ux_2d"])
-        uy_min  = minimum(init["uy_2d"])
-        uy_max  = maximum(init["uy_2d"])
+    # Collect all relevant data for limit computation
+    rho_arrays = [init["rho_2d"]]
+    ux_arrays = [init["ux_2d"]]
+    uy_arrays = haskey(init, "uy_2d") ? [init["uy_2d"]] : []
+    phi_arrays = haskey(init, "phi_2d") ? [init["phi_2d"]] : []
+
+    for f in final_files
+        push!(rho_arrays, f["rho_2d"])
+        push!(ux_arrays, f["ux_2d"])
+        if haskey(f, "uy_2d")
+            push!(uy_arrays, f["uy_2d"])
+        end
+        if haskey(f, "phi_2d")
+            push!(phi_arrays, f["phi_2d"])
+        end
     end
+
+    # Compute limits safely
+    rho_min = minimum(minimum(r) for r in rho_arrays)
+    rho_max = maximum(maximum(r) for r in rho_arrays)
+    ux_min = minimum(minimum(u) for u in ux_arrays)
+    ux_max = maximum(maximum(u) for u in ux_arrays)
+
+    uy_min = isempty(uy_arrays) ? 0.0 : minimum(minimum(u) for u in uy_arrays)
+    uy_max = isempty(uy_arrays) ? 0.0 : maximum(maximum(u) for u in uy_arrays)
+
+    phi_min = isempty(phi_arrays) ? 0.0 : minimum(minimum(p) for p in phi_arrays)
+    phi_max = isempty(phi_arrays) ? 0.0 : maximum(maximum(p) for p in phi_arrays)
 
     fig = plot(layout = (total_rows, total_cols),
                size = (400 * total_cols, 400 * total_rows),
@@ -242,7 +281,7 @@ function main()
     # Row 2: Velocity X (u_x)
     heatmap!(fig, init["x"], init["y"], init["ux_2d"],
              subplot = sp(2, 1),
-             xlabel = "x", ylabel = "u_x", title = "Initial",
+             xlabel = "x", ylabel = "uₓ", title = "Initial",
              aspect_ratio = :equal,
              clims = (ux_min, ux_max),
              framestyle = :box)
@@ -256,21 +295,42 @@ function main()
                  framestyle = :box)
     end
 
-    # Row 3: Velocity Y (u_y)
-    heatmap!(fig, init["x"], init["y"], init["uy_2d"],
-             subplot = sp(3, 1),
-             xlabel = "x", ylabel = "u_y", title = "Initial",
-             aspect_ratio = :equal,
-             clims = (uy_min, uy_max),
-             framestyle = :box)
-    for (ci, f) in enumerate(final_files)
-        heatmap!(fig, f["x"], f["y"], f["uy_2d"],
-                 subplot = sp(3, ci + 1),
-                 xlabel = "x",
-                 title = col_labels[ci],
+    # Row 3: Velocity Y (u_y) - for 2D systems
+    if total_rows >= 3
+        heatmap!(fig, init["x"], init["y"], init["uy_2d"],
+                 subplot = sp(3, 1),
+                 xlabel = "x", ylabel = "uᵧ", title = "Initial",
                  aspect_ratio = :equal,
                  clims = (uy_min, uy_max),
                  framestyle = :box)
+        for (ci, f) in enumerate(final_files)
+            heatmap!(fig, f["x"], f["y"], f["uy_2d"],
+                     subplot = sp(3, ci + 1),
+                     xlabel = "x",
+                     title = col_labels[ci],
+                     aspect_ratio = :equal,
+                     clims = (uy_min, uy_max),
+                     framestyle = :box)
+        end
+    end
+
+    # Row 4: Electric Potential (φ) - for EPB systems
+    if total_rows >= 4
+        heatmap!(fig, init["x"], init["y"], init["phi_2d"],
+                 subplot = sp(4, 1),
+                 xlabel = "x", ylabel = "φ", title = "Initial",
+                 aspect_ratio = :equal,
+                 clims = (phi_min, phi_max),
+                 framestyle = :box)
+        for (ci, f) in enumerate(final_files)
+            heatmap!(fig, f["x"], f["y"], f["phi_2d"],
+                     subplot = sp(4, ci + 1),
+                     xlabel = "x",
+                     title = col_labels[ci],
+                     aspect_ratio = :equal,
+                     clims = (phi_min, phi_max),
+                     framestyle = :box)
+        end
     end
 
     savefig(fig, out_path)

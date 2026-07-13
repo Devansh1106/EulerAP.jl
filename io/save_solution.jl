@@ -108,12 +108,21 @@ function save_solution(sol,
     equations_hyperbolic = semi.equations
     equations_elliptic = semi.equations_elliptic
 
-    nvars = nvariables(semi)
+    nvars_hyper    = nvariables(equations_hyperbolic)
+    nvars_elliptic = nvariables(equations_elliptic)
+    nvars_total    = nvars_hyper + nvars_elliptic
     nd    = ndims(mesh)
 
     u = solution_vector(sol)
     time = solution_time(sol)
     mkpath(dirname(filename))
+
+    # The solution is stored in block layout:
+    #   [ρ₁, m₁, ρ₂, m₂, ..., ρₙ, mₙ, φ₁, φ₂, ..., φₙ]
+    # Reorder to interleaved for HDF5 storage:
+    #   [ρ₁, m₁, φ₁, ρ₂, m₂, φ₂, ...]
+    nc = ndofs(mesh)
+    u_block = reorder_block_to_interleaved(u, nvars_hyper, nvars_elliptic, nc)
 
     h5open(filename, "w") do file
 
@@ -130,18 +139,40 @@ function save_solution(sol,
         metadata_group = create_group(file, "metadata")
         metadata_group["time"]       = time
         metadata_group["ndims"]      = nd
-        metadata_group["nvariables"] = nvars
+        metadata_group["nvariables"] = nvars_total
 
         equations_group = create_group(file, "equations")
         equations_group["gamma"]  = equations_hyperbolic.gamma
         equations_group["lambda"] = equations_elliptic.lambda
 
         solution_group = create_group(file, "solution")
-        solution_group["u"] = reshape(u, nvariables(semi), ndofs(mesh))
+        solution_group["u"] = u_block
     end
 
     println("Saved solution to ", filename)
     return nothing
+end
+
+"""
+    reorder_block_to_interleaved(u, nvars_hyper, nvars_elliptic, nc)
+
+Convert block layout [hyper_vars... | elliptic_vars...] to
+interleaved-by-cell layout, writing into a pre-allocated
+(nvars_hyper + nvars_elliptic, nc) array.
+"""
+function reorder_block_to_interleaved(u, nvars_hyper, nvars_elliptic, nc)
+    nvars_total = nvars_hyper + nvars_elliptic
+    result = similar(u, nvars_total, nc)
+    n_hyper = nvars_hyper * nc
+    @inbounds for cell in 1:nc
+        for v in 1:nvars_hyper
+            result[v, cell] = u[(cell - 1) * nvars_hyper + v]
+        end
+        for v in 1:nvars_elliptic
+            result[nvars_hyper + v, cell] = u[n_hyper + (cell - 1) * nvars_elliptic + v]
+        end
+    end
+    return result
 end
 
 end # @muladd

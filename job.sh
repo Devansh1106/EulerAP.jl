@@ -36,4 +36,8 @@ export JULIA_PROJECT=@.
 # srun julia --project=. examples/relaxation_euler_1d/relaxation_euler_1d_sinosidal_riemann.jl
 # srun julia --project=. examples/relaxation_euler_1d/relaxation_euler_1d_riemann.jl
 # srun julia --project=. examples/relaxation_euler_1d/relaxation_euler_1d_barenblatt_convergence.jl
-srun julia --project=. examples/relaxation_euler_1d/relaxation_euler_1d_barenblatt.jl
+# srun julia --project=. examples/relaxation_euler_1d/relaxation_euler_1d_barenblatt.jl
+# srun julia --project=. examples/relaxation_euler_2d/relaxation_euler_2d_riemann_type.jl
+
+# srun julia --project=. examples/euler_poisson_boltzmann_1d/euler_poisson_boltzmann_1d_riemann.jl
+srun julia --project=. examples/euler_poisson_boltzmann_1d/euler_poisson_boltzmann_1d_five_branch.jl

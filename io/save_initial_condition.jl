@@ -103,10 +103,19 @@ function save_initial_condition(semi::SemidiscretizationHyperbolicElliptic,
     equations_hyperbolic = semi.equations
     equations_elliptic = semi.equations_elliptic
 
-    nvars = nvariables(semi)
+    nvars_hyper    = nvariables(equations_hyperbolic)
+    nvars_elliptic = nvariables(equations_elliptic)
+    nvars_total    = nvars_hyper + nvars_elliptic
     nd    = ndims(mesh)
 
     u = initial_condition(t, semi)
+
+    # The solution is stored in block layout:
+    #   [ρ₁, m₁, ρ₂, m₂, ..., ρₙ, mₙ, φ₁, φ₂, ..., φₙ]
+    # Reorder to interleaved for HDF5 storage:
+    #   [ρ₁, m₁, φ₁, ρ₂, m₂, φ₂, ...]
+    nc = ndofs(mesh)
+    u_block = reorder_block_to_interleaved(u, nvars_hyper, nvars_elliptic, nc)
 
     h5open(filename, "w") do file
 
@@ -123,14 +132,14 @@ function save_initial_condition(semi::SemidiscretizationHyperbolicElliptic,
         metadata_group = create_group(file, "metadata")
         metadata_group["time"]       = t
         metadata_group["ndims"]      = nd
-        metadata_group["nvariables"] = nvars
+        metadata_group["nvariables"] = nvars_total
 
         equations_group = create_group(file, "equations")
         equations_group["gamma"]  = equations_hyperbolic.gamma
         equations_group["lambda"] = equations_elliptic.lambda
 
         solution_group = create_group(file, "solution")
-        solution_group["u"] = reshape(u, nvariables(semi), ndofs(mesh))
+        solution_group["u"] = u_block
     end
 
     println("Saved initial condition to ", filename)
