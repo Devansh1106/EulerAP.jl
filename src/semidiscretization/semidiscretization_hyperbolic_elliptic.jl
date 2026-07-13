@@ -62,13 +62,13 @@ The hyperbolic operator is discretized using the finite-volume solver,
 while the elliptic equation is handled by the specified elliptic solver.
 """
 function SemidiscretizationHyperbolicElliptic(mesh,
-                                              equations::Tuple,
-                                              initial_condition,
-                                              solver;
-                                              source_terms = nothing,
-                                              elliptic_solver = EllipticSolver(),
-                                              source_terms_elliptic = nothing,
-                                              boundary_conditions)
+                                           equations::Tuple,
+                                           initial_condition,
+                                           solver;
+                                           source_terms = nothing,
+                                           elliptic_solver = EllipticSolver(),
+                                           source_terms_elliptic = nothing,
+                                           boundary_conditions)
 
     hyperbolic_equations, elliptic_equations = equations
 
@@ -79,36 +79,41 @@ function SemidiscretizationHyperbolicElliptic(mesh,
                          solver)
 
     elliptic_cache = create_elliptic_cache(mesh,
-                                           elliptic_equations,
-                                           EllipticSolver())
+                                         elliptic_equations,
+                                         EllipticSolver())
 
     check_periodicity_mesh_boundary_conditions(mesh, hyperbolic_bc)
     check_periodicity_mesh_boundary_conditions(mesh, elliptic_bc)
 
-    return SemidiscretizationHyperbolicElliptic{typeof(mesh),
-                                                typeof(hyperbolic_equations),
-                                                typeof(elliptic_equations),
-                                                typeof(initial_condition),
-                                                typeof(hyperbolic_bc),
-                                                typeof(elliptic_bc),
-                                                typeof(source_terms),
-                                                typeof(source_terms_elliptic),
-                                                typeof(solver),
-                                                typeof(cache),
-                                                typeof(elliptic_cache)}(mesh,
-                                                                        hyperbolic_equations,
-                                                                        elliptic_equations,
-                                                                        initial_condition,
-                                                                        hyperbolic_bc,
-                                                                        elliptic_bc,
-                                                                        source_terms,
-                                                                        source_terms_elliptic,
-                                                                        solver,
-                                                                        cache,
-                                                                        elliptic_cache)
+    semi = SemidiscretizationHyperbolicElliptic{typeof(mesh),
+                                               typeof(hyperbolic_equations),
+                                               typeof(elliptic_equations),
+                                               typeof(initial_condition),
+                                               typeof(hyperbolic_bc),
+                                               typeof(elliptic_bc),
+                                               typeof(source_terms),
+                                               typeof(source_terms_elliptic),
+                                               typeof(solver),
+                                               typeof(cache),
+                                               typeof(elliptic_cache)}(mesh,
+                                                                       hyperbolic_equations,
+                                                                       elliptic_equations,
+                                                                       initial_condition,
+                                                                       hyperbolic_bc,
+                                                                       elliptic_bc,
+                                                                       source_terms,
+                                                                       source_terms_elliptic,
+                                                                       solver,
+                                                                       cache,
+                                                                       elliptic_cache)
+
+    # Set the semi reference in Newton cache after the semidiscretization is created
+    set_newton_semi!(elliptic_cache.newton_cache, semi)
+
+    return semi
 end
 
-@inline nvariables(semi::SemidiscretizationHyperbolicElliptic) = nvariables(semi.equations) + 1
+@inline nvariables(semi::SemidiscretizationHyperbolicElliptic) = nvariables(semi.equations) + nvariables(semi.equations_elliptic)
 @inline Base.show(io::IO, ::SemidiscretizationHyperbolicElliptic) = print(io, "Hyperbolic-Elliptic Semidiscretization")
 
 # ============================================================================
@@ -193,5 +198,99 @@ end
     end
 end
 
+"""
+    initial_condition(t, semi)
+
+Construct the initial state for a coupled hyperbolic-elliptic
+semidiscretization.
+
+The returned ODE state is stored as
+    [hyperbolic variables..., elliptic variables...]
+
+where the hyperbolic variables remain cell-major, i.e.
+    ρ₁, m₁, ρ₂, m₂, ..., ρₙ, mₙ
+
+followed by the elliptic unknowns
+    φ₁, φ₂, ..., φₙ.
+
+The initial electric potential is obtained by solving
+    -λ² Δφ + e^φ = ρ₀.
+"""
+function initial_condition(t,
+                           semi::SemidiscretizationHyperbolicElliptic)
+
+    mesh = semi.mesh
+
+    nvars_hyper = nvariables(semi.equations)
+    nvars_elliptic = nvariables(semi.equations_elliptic)
+
+    nc = ndofs(mesh)
+
+    n_hyper = nvars_hyper * nc
+    n_elliptic = nvars_elliptic * nc
+
+    T = eltype(mesh.dx)
+
+    # --------------------------------------------------
+    # Allocate complete ODE state
+    # --------------------------------------------------
+
+    u = zeros(T, n_hyper + n_elliptic)
+
+    u_hyper = @view u[1:n_hyper]
+    phi     = @view u[n_hyper+1:end]
+
+    # --------------------------------------------------
+    # Construct hyperbolic initial condition
+    # --------------------------------------------------
+
+    for I in eachcell(mesh)
+
+        cell = cell_index(I, semi)
+        x = coordinates(I, mesh)
+
+        state = semi.initial_condition(
+            x,
+            t,
+            semi.equations,
+        )
+
+        @inbounds for v in 1:nvars_hyper
+            u_hyper[global_dof(cell, v, nvars_hyper)] = state[v]
+        end
+    end
+
+    # --------------------------------------------------
+    # Build RHS = initial density
+    # --------------------------------------------------
+
+    rhs = semi.cache_elliptic.residual
+
+    @inbounds for cell in 1:nc
+
+        rho_idx = global_dof(
+            cell,
+            1,
+            nvars_hyper,
+        )
+
+        rhs[cell] = u_hyper[rho_idx]
+
+    end
+
+    # --------------------------------------------------
+    # Compute initial electric potential
+    # --------------------------------------------------
+
+    solve_newton!(
+        phi,
+        rhs,
+        initial_laplacian_coefficient(semi.equations_elliptic),
+        semi,
+        t,
+    )
+
+    return u
+end
 
 end # @muladd

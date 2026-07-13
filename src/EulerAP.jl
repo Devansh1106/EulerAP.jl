@@ -6,8 +6,8 @@ using LinearAlgebra: Tridiagonal
 using SparseArrays: spzeros, sparse
 using ForwardDiff
 
-using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution
-using NonlinearSolve: NonlinearFunction, NonlinearProblem, NewtonRaphson, NonlinearSolve
+using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution, NonlinearProblem, reinit!, solve!
+using NonlinearSolve: NonlinearFunction, NonlinearProblem, NewtonRaphson, NonlinearSolve, init
 
 using Pardiso
 using LinearSolve: MKLPardisoFactorize
@@ -53,6 +53,7 @@ include("solvers/solvers.jl")
 
 include("solvers/fv_1d.jl")
 include("solvers/fv_2d.jl")
+include("solvers/newton_solver.jl") 
 
 # --------------------------------------------------
 # Time integration
@@ -148,11 +149,15 @@ export initial_condition_sinosidal_riemann
 export initial_condition_barenblatt
 # EPB system
 export initial_condition_riemann_epb
+export initial_condition_five_branch
 
 # Source terms
 export source_terms
 export source_terms_hyperbolic
 
+# Newton solver types
+export NewtonParameters
+export NewtonCache
 
 # Postprocessing
 export compute_errors

@@ -4,8 +4,6 @@
 @muladd begin
 #! format: noindent
 
-const linsolve = MKLPardisoFactorize()
-
 abstract type AbstractTimeIntegrator end
 
 # ======================================

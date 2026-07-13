@@ -5,6 +5,8 @@
 @muladd begin
 #! format: noindent
 
+const linsolve = MKLPardisoFactorize()
+
 # abstract supertype of specific semidiscretizations such as
 # - SemidiscretizationHyperbolic for hyperbolic conservation laws
 abstract type AbstractSemidiscretization end

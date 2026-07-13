@@ -33,14 +33,17 @@ Density flux used in the explicit correction stage of the IMEX scheme,
 where ρ̄ is the γ-mean of the left and right densities.
 """
 @inline function explicit_density_flux(rho_l,
-                                        rho_r,
-                                        vel_l,
-                                        vel_r,
-                                        gamma)
+                                       rho_r,
+                                       vel_l,
+                                       vel_r,
+                                       gamma)
 
-    rho_half = gamma_mean(rho_l,
-                          rho_r,
-                          gamma)
+    # Clamp near-zero densities to avoid negative values in gamma_mean
+    # (fractional powers of negative numbers produce complex results)
+    # rho_l = max(rho_l, eps(typeof(rho_l)))
+    # rho_r = max(rho_r, eps(typeof(rho_r)))
+
+    rho_half = gamma_mean(rho_l, rho_r, gamma)
 
     return rho_half * 0.5 * (vel_l + vel_r)
 
@@ -71,11 +74,8 @@ function perform_stage!(
     nvars = nvariables(equations)
 
     for axis in 1:NDIMS
-
         dx = mesh.dx[axis]
-
         @inbounds for I in eachcell(mesh)
-
             cell = cell_index(I, semi)
 
             # -----------------------------
@@ -95,7 +95,6 @@ function perform_stage!(
             # -----------------------------
 
             Ip1 = neighbor_index(I, semi, axis, 1)
-
             u_rr = _hyperbolic_state(cache.u,
                                      Ip1,
                                      semi,
@@ -104,13 +103,23 @@ function perform_stage!(
             rho_r = u_rr[1]
             vel_r = u_rr[2] / rho_r
 
-            flux_rr = explicit_density_flux(
-                rho_c,
-                rho_r,
-                vel_c,
-                vel_r,
-                gamma,
-            )
+            # if rho_c <= 0 || rho_r <= 0
+            #     error("""
+            #             Negative density entering ExplicitCorrectionStage
+
+            #             time = $t
+            #             cell = $cell
+
+            #             rho_i = $rho_c
+            #             rho_r = $rho_r
+            #             """)
+            # end
+
+            flux_rr = explicit_density_flux(rho_c,
+                                            rho_r,
+                                            vel_c,
+                                            vel_r,
+                                            gamma)
 
             # -----------------------------
             # Left state
@@ -126,26 +135,19 @@ function perform_stage!(
             rho_l = u_ll[1]
             vel_l = u_ll[2] / rho_l
 
-            flux_ll = explicit_density_flux(
-                rho_l,
-                rho_c,
-                vel_l,
-                vel_c,
-                gamma,
-            )
+            flux_ll = explicit_density_flux(rho_l,
+                                            rho_c,
+                                            vel_l,
+                                            vel_c,
+                                            gamma)
 
             # -----------------------------
             # Finite-volume update
             # -----------------------------
 
-            rho_idx = global_dof(cell,
-                                 1,
-                                 nvars)
+            rho_idx = global_dof(cell, 1, nvars)
 
-            cache.rho_hat[cell] =
-                cache.u[rho_idx] -
-                (dt / dx) *
-                (flux_rr - flux_ll)
+            cache.rho_hat[cell] = cache.u[rho_idx] - (dt / dx) * (flux_rr - flux_ll)
         end
     end
     return nothing
@@ -159,40 +161,6 @@ end
 # NOTE: Currently 1D-only; 2D requires a 5-point stencil sparse solver.
 # ============================================================================
 
-
-"""
-    elliptic_residual!(F, x_elliptic, rho_hat, semi, dt, eta, t)
-
-Residual for the nonlinear elliptic equation:
-    F_i = -α(x_{i-1} - 2x_i + x_{i+1}) + f(x_i) - ρ̂_i
-where f(x) = exp(x) for Poisson-Boltzmann.
-"""
-function elliptic_residual!(F, x_elliptic, rho_hat, semi, dt, eta, t)
-    equations_elliptic = semi.equations_elliptic
-    mesh = semi.mesh
-    nx = size(mesh, 1)
-    dx = mesh.dx[1]
-    lambda = equations_elliptic.lambda
-    alpha = (lambda^2 + eta * dt) / dx^2
-
-    @inbounds for i in 1:nx
-        # Ghost cell values for Laplacian stencil
-        x_im1 = i > 1 ? x_elliptic[i - 1] : elliptic_ghost_value(x_elliptic, i - 1, nx, semi, t)
-        x_i   = x_elliptic[i]
-        x_ip1 = i < nx ? x_elliptic[i + 1] : elliptic_ghost_value(x_elliptic, i + 1, nx, semi, t)
-
-        # Laplacian: x_{i-1} - 2x_i + x_{i+1}
-        laplacian = x_im1 - 2 * x_i + x_ip1
-
-        # Equation-specific point source
-        point_src = elliptic_point_source(x_i, equations_elliptic)
-
-        F[i] = -alpha * laplacian + point_src - rho_hat[i]
-    end
-
-    return nothing
-end
-
 function perform_stage!(
     ::ImplicitPredictionStage,
     semi::SemidiscretizationHyperbolicElliptic,
@@ -201,89 +169,25 @@ function perform_stage!(
     dt,
     t,
 )
-    equations_elliptic = semi.equations_elliptic
-    elliptic_cache = semi.cache_elliptic
 
-    mesh = semi.mesh
+    λ = semi.equations_elliptic.lambda
+    η = semi.solver.flux.eta
 
-    nx = size(mesh, 1)
-    dx = mesh.dx[1]
-
-    lambda = equations_elliptic.lambda
-    eta = semi.solver.flux.eta
-
-    alpha = (lambda^2 + eta * dt) / dx^2
-
-    dl = elliptic_cache.dl
-    d  = elliptic_cache.d
-    du = elliptic_cache.du
-
-    function res!(F, x, p)
-        elliptic_residual!(
-            F,
-            x,
-            cache.rho_hat,
-            semi,
-            dt,
-            eta,
-            t,
-        )
-        return nothing
-    end
-
-    function jacobian!(J, x, p)
-        @inbounds for i in 1:nx
-            point_deriv =
-                elliptic_point_source_derivative(
-                    x[i],
-                    equations_elliptic,
-                )
-
-            d[i] = 2 * alpha + point_deriv
-
-            if i > 1
-                dl[i] = -alpha
-            end
-
-            if i < nx
-                du[i] = -alpha
-            end
-
-        end
-        copyto!(J.dl, 1, dl, 2, nx - 1)
-        copyto!(J.d, d)
-        copyto!(J.du, 1, du, 1, nx - 1)
-        return nothing
-    end
-
-    jac_prototype = semi.cache_elliptic.jacobian
-
-    nlf = NonlinearFunction(
-        res!;
-        jac = jacobian!,
-        jac_prototype = jac_prototype,
+    solve_newton!(
+        cache.phi,
+        cache.rho_hat,
+        -(λ^2 + η * dt),
+        semi,
+        t,
     )
 
-    prob = NonlinearProblem(
-        nlf,
-        copy(cache.phi),
-        nothing,
-    )
-
-    sol = NonlinearSolve.solve(
-        prob,
-        NewtonRaphson();
-        abstol = 1e-10,
-        reltol = 1e-10,
-    )
-    copyto!(cache.phi, sol.u)
     return nothing
 end
 
 # ============================================================================
 # Stage 3: Implicit Correction (final ρ, ρu update)
 # ============================================================================
-# F^1_{face} = ρ̄ * (u_r - u_l)/2 - (x_r - x_l) * ηΔt/Δx
+# F^1_{face} = ρ̄ * (u_r + u_l)/2 - (x_r - x_l) * η/Δx
 # F^2_{face} = u_l * max(F^1, 0) + u_r * max(-F^1, 0)
 # S^2_{face} = ρ̄ * (x_r - x_l) / Δx
 #
@@ -305,12 +209,15 @@ function perform_stage!(
     NDIMS = ndims(mesh)
     nvars = nvariables(equations)
 
+    # Stage starts from uⁿ
     copyto!(cache.u_new, cache.u)
+
+    # Read/write buffers
+    read_state  = cache.u_new
+    write_state = cache.u_buffer
 
     for axis in 1:NDIMS
         dx = mesh.dx[axis]
-
-        copyto!(cache.u_buffer, cache.u_new)
         @inbounds for I in eachcell(mesh)
 
             cell = cell_index(I, semi)
@@ -319,7 +226,12 @@ function perform_stage!(
             # Center state
             # --------------------------------------------------
 
-            u_cc = _hyperbolic_state(cache.u_new, I, semi, t)
+            u_cc = _hyperbolic_state(
+                read_state,
+                I,
+                semi,
+                t,
+            )
 
             phi_cc = _elliptic_var(
                 cache.phi,
@@ -335,7 +247,7 @@ function perform_stage!(
             Ip1 = neighbor_index(I, semi, axis, 1)
 
             u_rr = _hyperbolic_state(
-                cache.u_new,
+                read_state,
                 Ip1,
                 semi,
                 t,
@@ -366,7 +278,7 @@ function perform_stage!(
             Im1 = neighbor_index(I, semi, axis, -1)
 
             u_ll = _hyperbolic_state(
-                cache.u_new,
+                read_state,
                 Im1,
                 semi,
                 t,
@@ -397,23 +309,43 @@ function perform_stage!(
             rho_idx = global_dof(cell, 1, nvars)
             mom_idx = global_dof(cell, 2, nvars)
 
-            cache.u_buffer[rho_idx] =
-                cache.u_new[rho_idx] -
+            write_state[rho_idx] =
+                read_state[rho_idx] -
                 (dt / dx) *
                 (right.flux[1] - left.flux[1])
 
-            cache.u_buffer[mom_idx] =
-                cache.u_new[mom_idx] -
+            write_state[mom_idx] =
+                read_state[mom_idx] -
                 (dt / dx) *
                 (right.flux[2] - left.flux[2])
 
-            cache.u_buffer[mom_idx] +=
+            write_state[mom_idx] +=
                 (dt / 2) *
                 (right.source + left.source)
 
+            # if write_state[rho_idx] <= 0
+            #     println("Negative density created")
+            #     println("time = ", t)
+            #     println("cell = ", cell)
+            #     println("rho_old = ", read_state[rho_idx])
+            #     println("F_left  = ", left.flux[1])
+            #     println("F_right = ", right.flux[1])
+            #     println("flux difference = ", right.flux[1] - left.flux[1])
+            #     println("dt/dx = ", dt/dx)
+            # end
+
         end
-        copyto!(cache.u_new, cache.u_buffer)
+        # Swap read/write buffers for the next directional sweep
+        read_state, write_state = write_state, read_state
     end
+
+    # If the final sweep ended in u_buffer (odd number of dimensions),
+    # copy it back into u_new.
+    if read_state !== cache.u_new
+        copyto!(cache.u_new, read_state)
+    end
+
+    # Advance the solution
     copyto!(cache.u, cache.u_new)
     return nothing
 end
@@ -431,29 +363,6 @@ end
 
 Advance the semidiscretization using an IMEX time integrator.
 """
-function _deinterleave!(u_hyper, phi, u_interleaved,
-                        nc, nvars_total, nvars_hyper)
-    @inbounds for cell in 1:nc
-        src_base = (cell - 1) * nvars_total
-        dst_base = (cell - 1) * nvars_hyper
-        u_hyper[dst_base + 1] = u_interleaved[src_base + 1]
-        u_hyper[dst_base + 2] = u_interleaved[src_base + 2]
-        phi[cell] = u_interleaved[src_base + 3]
-    end
-    return nothing
-end
-
-function _reinterleave!(u_interleaved, u_hyper, phi,
-                        nc, nvars_total, nvars_hyper)
-    @inbounds for cell in 1:nc
-        src_base = (cell - 1) * nvars_hyper
-        dst_base = (cell - 1) * nvars_total
-        u_interleaved[dst_base + 1] = u_hyper[src_base + 1]
-        u_interleaved[dst_base + 2] = u_hyper[src_base + 2]
-        u_interleaved[dst_base + 3] = phi[cell]
-    end
-    return nothing
-end
 
 function solve_imex(semi::AbstractSemidiscretization,
                     integrator::IMEXIntegrator,
@@ -463,25 +372,22 @@ function solve_imex(semi::AbstractSemidiscretization,
 
     t = first(tspan)
 
-    # Full initial state in interleaved layout: [ρ₁, m₁, φ₁, ρ₂, m₂, φ₂, ...]
+    # Full initial state in block layout: [ρ₁, m₁, ρ₂, m₂, ..., ρₙ, mₙ, φ₁, φ₂, ..., φₙ]
     u = initial_condition(t, semi)
 
     nvars_hyper     = nvariables(semi.equations)
     nvars_elliptic  = nvariables(semi.equations_elliptic)
-    nvars_total     = nvars_hyper + nvars_elliptic  # = 3
 
     nc = ncells(semi.mesh)
 
     n_hyper    = nvars_hyper * nc
     n_elliptic = nvars_elliptic * nc
 
-    # De-interleave into block layout for IMEX solver:
-    #   u_hyper = [ρ₁, m₁, ρ₂, m₂, ..., ρ₁₀₀, m₁₀₀]
-    #   phi     = [φ₁, φ₂, ..., φ₁₀₀]
-    u_hyper = zeros(eltype(u), n_hyper)
-    phi     = zeros(eltype(u), n_elliptic)
-
-    _deinterleave!(u_hyper, phi, u, nc, nvars_total, nvars_hyper)
+    # Use views into the block-layout state for the IMEX solver:
+    #   u_hyper = u[1:n_hyper]  = [ρ₁, m₁, ρ₂, m₂, ..., ρₙ, mₙ]
+    #   phi     = u[n_hyper+1:end] = [φ₁, φ₂, ..., φₙ]
+    u_hyper = @view u[1:n_hyper]
+    phi     = @view u[n_hyper+1:end]
 
     # --------------------------------------------------
     # IMEX cache
@@ -510,6 +416,9 @@ function solve_imex(semi::AbstractSemidiscretization,
     stats = CallbackStats(eltype(u))
     semi.cache.stats = stats
 
+    # Initial mass
+    stats.initial_mass = total_mass(cache.u, semi)
+
     context = CallbackContext(
         simulation,
         EulerAPSolution(u, t),
@@ -527,6 +436,8 @@ function solve_imex(semi::AbstractSemidiscretization,
         while t < last(tspan) - eps(t)
             actual_dt = min(dt, last(tspan) - t)
 
+            stats.mass_before = total_mass(cache.u, semi)
+
             # Stage 1: Explicit density correction (evaluated at current time t)
             @timeit stats.timer "ExplicitCorrectionStage" begin
                 perform_stage!(
@@ -538,6 +449,14 @@ function solve_imex(semi::AbstractSemidiscretization,
                     t,
                 )
             end
+
+            stats.mass_after_stage1 =
+                sum(cache.rho_hat) * prod(semi.mesh.dx)
+
+            stats.relative_mass_error_stage1 =
+                abs(stats.mass_after_stage1 -
+                    stats.mass_before) /
+                abs(stats.mass_before)
 
             # Stage 2: Implicit elliptic solve (predicts φ at future time t + dt)
             @timeit stats.timer "ImplicitPredictionStage" begin
@@ -563,6 +482,20 @@ function solve_imex(semi::AbstractSemidiscretization,
                 )
             end
 
+            stats.mass_after_stage3 =
+                total_mass(cache.u, semi)
+
+            stats.relative_mass_error_stage3 =
+                abs(stats.mass_after_stage3 -
+                    stats.mass_before) /
+                abs(stats.mass_before)
+
+            stats.minimum_density =
+                minimum_density(cache.u, semi)
+
+            stats.maximum_velocity =
+                maximum_velocity(cache.u, semi)
+
             t += actual_dt
             iteration += 1
 
@@ -570,9 +503,8 @@ function solve_imex(semi::AbstractSemidiscretization,
             stats.time = t
             stats.dt = actual_dt
 
-            # Re-interleave before callbacks so they see the correct state
-            _reinterleave!(u, cache.u, cache.phi, nc, nvars_total, nvars_hyper)
-
+            # u is already in block layout, so cache.u and cache.phi are views into u.
+            # No re-interleave needed — callbacks see the correct state directly.
             context.solution = EulerAPSolution(u, t)
 
             perform_callbacks!(
@@ -582,8 +514,6 @@ function solve_imex(semi::AbstractSemidiscretization,
         end
     end
     finalize_callbacks!(callbacks, context)
-    # Final re-interleave to ensure returned solution is correct
-    _reinterleave!(u, cache.u, cache.phi, nc, nvars_total, nvars_hyper)
     return EulerAPSolution(u, t)
 end
 

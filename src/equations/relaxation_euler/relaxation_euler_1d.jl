@@ -93,7 +93,7 @@ end
 # --------------------------------------------------
 
 """
-    initial_condition_box(x, t, equations::RelaxationEulerEquations1D)
+    initial_condition_single_box(x, t, equations::RelaxationEulerEquations1D)
 
 A single smoothed box initial condition:
 - Density: smoothed top-hat between a = -2 and b = 2

@@ -29,14 +29,10 @@ It contains
 - the current numerical solution,
 - the runtime statistics.
 """
-mutable struct CallbackContext{SimulationType,Solution,Stats}
-
+mutable struct CallbackContext{SimulationType, Solution, Stats}
     simulation::SimulationType
-
     solution::Solution
-
     stats::Stats
-
 end
 
 @inline mesh(context::CallbackContext) = semi(context).mesh
@@ -67,20 +63,13 @@ Container storing everything that defines a simulation.
 This object is immutable throughout the simulation and contains the
 semidiscretization together with the time integration parameters.
 """
-struct Simulation{Semi,Integrator,T}
-
+struct Simulation{Semi, Integrator, T}
     semi::Semi
-
     integrator::Integrator
-
     tspan::Tuple{T,T}
-
     dt::T
-
     abstol::T
-
     reltol::T
-
 end
 
 
@@ -107,9 +96,7 @@ mutable struct CallbackStats{T}
     # ------------------------------------------------------------------------
 
     iteration::Int
-
     time::T
-
     dt::T
 
     # ------------------------------------------------------------------------
@@ -123,7 +110,6 @@ mutable struct CallbackStats{T}
     # ------------------------------------------------------------------------
 
     rhs_calls::Int
-
     jacobian_calls::Int
 
     # ------------------------------------------------------------------------
@@ -131,13 +117,22 @@ mutable struct CallbackStats{T}
     # ------------------------------------------------------------------------
 
     nonlinear_iterations::Int
-
     linear_iterations::Int
-
     nonlinear_solves::Int
-
     linear_solves::Int
 
+    # -- Conservation --
+    initial_mass::T
+
+    mass_before::T
+    mass_after_stage1::T
+    mass_after_stage3::T
+
+    relative_mass_error_stage1::T
+    relative_mass_error_stage3::T
+
+    minimum_density::T
+    maximum_velocity::T
 end
 
 
@@ -163,7 +158,19 @@ function CallbackStats(::Type{T}) where {T}
         0,
 
         0,
-        0
+        0,
+
+        zero(T),   # initial_mass
+
+        zero(T),   # mass_before
+        zero(T),   # mass_after_stage1
+        zero(T),   # mass_after_stage3
+
+        zero(T),   # rel error stage1
+        zero(T),   # rel error stage3
+
+        typemax(T),# minimum density
+        zero(T),   # maximum velocity
     )
 end
 
@@ -189,6 +196,24 @@ function reset!(stats::CallbackStats)
 
     stats.nonlinear_solves = 0
     stats.linear_solves = 0
+
+    # ------------------------------------------------------------------------
+    # Conservation diagnostics
+    # ------------------------------------------------------------------------
+
+    T = typeof(stats.time)
+
+    stats.initial_mass = zero(T)
+
+    stats.mass_before = zero(T)
+    stats.mass_after_stage1 = zero(T)
+    stats.mass_after_stage3 = zero(T)
+
+    stats.relative_mass_error_stage1 = zero(T)
+    stats.relative_mass_error_stage3 = zero(T)
+
+    stats.minimum_density = typemax(T)
+    stats.maximum_velocity = zero(T)
 
     return nothing
 end

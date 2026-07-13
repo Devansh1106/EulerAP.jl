@@ -50,22 +50,9 @@ For the Poisson-Boltzmann equation, this is exp(x).
     return exp(x_i)
 end
 
-# TODO: Need to change EulerPressureLess1D to a common type for Hyper+elliptic system. This is a temporary setup.
-"""
-    initial_condition_riemann_epb(x, t, semi)
+@inline initial_laplacian_coefficient(equations::AbstractEllipticEquations) = -equations.lambda^2
 
-Specialized method for the coupled hyperbolic-elliptic system.
-Returns the full state vector (ρ, ρu, φ) with φ = log(ρ) so that
-exp(φ) = ρ satisfies the Poisson-Boltzmann equation at t=0.
-"""
-@inline function initial_condition_riemann_epb(x, t, equations::EulerPressureLess1D)
-    if x[1] < 0.5
-        rho = 2.0
-    else
-        rho = 1.0
-    end
-    phi = log(rho)
-    return SVector{3}(rho, 0.0, 0.0)
-end
+
+# TODO: Need to change EulerPressureLess1D to a common type for Hyper+elliptic system. This is a temporary setup.
 
 end # @muladd

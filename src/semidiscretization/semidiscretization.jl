@@ -19,16 +19,15 @@ struct EulerAPSolution{TU,T}
     t::T
 end
 
-
 """
     EllipticCache
 
 Cache storing pre-allocated arrays for the elliptic implicit solver in the IMEX scheme.
 All arrays avoid re-allocation on every time step.
 """
-struct EllipticCache{TV,TJ}
-
-    # Thomas algorithm work arrays
+# Separate struct holding NewtonCache for scalability
+mutable struct EllipticCache{TV, TJ, TN}
+    # Thomas algorithm work arrays (used in assemble_nonlinear_jacobian!)
     dl::TV
     d::TV
     du::TV
@@ -38,12 +37,70 @@ struct EllipticCache{TV,TJ}
 
     # Jacobian prototype
     jacobian::TJ
+
+    # Newton solver cache (holds all Newton-related state)
+    newton_cache::TN
+end
+
+"""
+    NewtonParameters
+
+Parameters passed to the Newton solver for the elliptic implicit equation.
+"""
+mutable struct NewtonParameters{TRhs, TCoeff, TTime}
+    rhs::TRhs
+    laplacian_coeff::TCoeff
+    t::TTime
+end
+
+"""
+    NewtonCache
+
+Cache holding all Newton-related state for the elliptic solver.
+"""
+mutable struct NewtonCache{TP}
+    params::TP
+    nonlinear_cache::Any # TODO: need to think of a way to remove this type instability
+end
+
+function create_newton_cache(mesh::CartesianMesh)
+    nx = ncells(mesh)
+    T = eltype(mesh.dx)
+
+    # Create initial parameters struct (will be updated during solve)
+    params = NewtonParameters(zeros(T, nx), zero(T), zero(T))
+
+    # NonlinearProblem is created later in set_newton_semi!
+    # once the semidiscretization is available
+    return NewtonCache(params, nothing)
+end
+
+function set_newton_semi!(newton_cache::NewtonCache, semi::AbstractSemidiscretization)
+    mesh = semi.mesh
+    T = eltype(mesh.dx)
+    nx = ncells(mesh)
+
+    # Create closures that capture semi
+    function residual!(F, phi, params)
+        assemble_nonlinear_residual!(F, phi, params, semi)
+    end
+    function jacobian!(J, phi, params)
+        assemble_nonlinear_jacobian!(J, phi, params, semi)
+    end
+
+    jac_prototype = semi.cache_elliptic.jacobian
+    nonlinear_function = NonlinearFunction(residual!, jac = jacobian!,
+                                           jac_prototype = jac_prototype)
+    u0 = zeros(T, nx)
+    prob = NonlinearProblem(nonlinear_function, u0, newton_cache.params)
+    newton_cache.nonlinear_cache = init(prob, NewtonRaphson(); linsolve_kwargs = (linsolve = linsolve,))
+
+    return nothing
 end
 
 function create_elliptic_cache(mesh::CartesianMesh{1},
                                equations_elliptic::AbstractEquations,
                                solver_elliptic)
-
     nx = ncells(mesh)
     T = eltype(mesh.dx)
 
@@ -53,13 +110,16 @@ function create_elliptic_cache(mesh::CartesianMesh{1},
         zeros(T, nx - 1),
     )
 
-    return EllipticCache(
-        zeros(T, nx),      # dl
-        zeros(T, nx),      # d
-        zeros(T, nx),      # du
-        zeros(T, nx),      # residual
-        jacobian,
-    )
+    # Create the Newton cache (nonlinear problem created later in set_newton_semi!
+    # once the semidiscretization is fully constructed)
+    newton_cache = create_newton_cache(mesh)
+
+    return EllipticCache(zeros(T, nx),      # dl
+                         zeros(T, nx),      # d
+                         zeros(T, nx),      # du
+                         zeros(T, nx),      # residual
+                         jacobian,
+                         newton_cache)
 end
 
 mutable struct FVCache{TJacobian, TPosition, TX, TY, TJlocal, TResidualBuffer}

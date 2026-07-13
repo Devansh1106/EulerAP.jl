@@ -51,6 +51,27 @@ Rusanov numerical flux for a face normal to the `orientation`-th axis.
     return 0.5 * (flux_ll + flux_rr - λ * (u_rr - u_ll))
 end
 
+# --------------------------------------------------
+# Gamma-mean (logarithmic mean of ρ^γ)
+# --------------------------------------------------
+# Computes ρ̄ = (γ-1)/γ * (ρ_r^γ - ρ_l^γ) / (ρ_r^{γ-1} - ρ_l^{γ-1})
+# with Taylor expansion for near-equal densities to avoid division by zero.
+@inline function gamma_mean(rho_l, rho_r, gamma)
+    avg = 0.5 * (rho_l + rho_r)
+    f = (rho_r - rho_l) / (rho_r + rho_l)
+    ν = f * f
+
+    if ν < 1e-4
+        # Taylor expansion
+        c1 = (gamma - 2.0) / 3.0
+        c2 = (gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) / 45.0
+        c3 = (gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) * (2.0 * gamma * (gamma - 2.0) - 9.0) / 945.0
+        return avg * (1.0 + ν * (c1 - ν * (c2 + ν * c3)))
+    else
+        denom = rho_r^(gamma - 1.0) - rho_l^(gamma - 1.0)
+        return ((gamma - 1.0) / gamma) * (rho_r^gamma - rho_l^gamma) / denom
+    end
+end
 
 """
     (u_ll, u_rr, orientation, equations, dt, dx)
@@ -72,23 +93,8 @@ Energy-stable numerical flux for the relaxation Euler system, normal to the
     P_l = rho_l^gamma
     P_r = rho_r^gamma
 
-    # Standard arithmetic mean {{ϱ}}
-    avg = 0.5 * (rho_l + rho_r)
-
-    # Auxiliary variables
-    f = (rho_r - rho_l) / (rho_r + rho_l)
-    ν = f * f
-
-    if ν < 1e-8
-        # Taylor expansion
-        c1 = (gamma - 2.0) / 3.0
-        c2 = -(gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) / 45.0
-        c3 = (gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) * (2.0 * gamma * (gamma - 2.0) - 9.0) / 945.0
-        rho_half = avg * (1.0 + ν * (c1 + ν * (c2 + ν * c3)))
-    else
-        denom = rho_r^(gamma - 1.0) - rho_l^(gamma - 1.0)
-        rho_half = (gamma - 1.0) / gamma * (rho_r^gamma - rho_l^gamma) / denom
-    end
+    # Gamma-mean density (clamped to avoid negative fractional powers)
+    rho_half = gamma_mean(rho_l, rho_r, gamma)
 
     # Normal velocities
     vel_l = u_ll[1 + orientation] / rho_l
@@ -134,7 +140,7 @@ end
 # is passed separately since it belongs to the elliptic subsystem.
 #
 # Density flux:
-#   F^1_{i+1/2} = rho_half * (vel_r - vel_l) / 2
+#   F^1_{i+1/2} = rho_half * (vel_r + vel_l) / 2
 #               - (Phi_r - Phi_l) * eta * dt / dx
 #
 # Normal momentum flux:
@@ -156,7 +162,7 @@ end
     dt,
     dx)
 
-    eta_dt = flux_.eta * dt
+    # eta_dt = flux_.eta * dt
 
     # --------------------------------------------------
     # Left / right states
@@ -185,8 +191,8 @@ end
     F_rho =
         rho_half *
         0.5 *
-        (vel_rr - vel_ll) -
-        eta_dt *
+        (vel_rr + vel_ll) -
+        flux_.eta *
         (phi_rr - phi_ll) / dx
 
     # --------------------------------------------------
@@ -205,44 +211,20 @@ end
         if k == 1
             return F_rho
         elseif k == 1 + orientation
-            return Fp * vel_ll +
-                   Fm * vel_rr
+            return Fp * vel_ll + Fm * vel_rr
         else
             # Transverse momentum components
             v_ll = u_ll[k] / rho_ll
             v_rr = u_rr[k] / rho_rr
 
-            return Fp * v_ll +
-                   Fm * v_rr
+            return Fp * v_ll + Fm * v_rr
         end
     end
-    interface_source = rho_half * (phi_rr - phi_ll) / dx
+    interface_source = -rho_half * (phi_rr - phi_ll) / dx
     return EPBInterfaceContribution(
         SVector{N}(components),
         interface_source
     )
-end
-
-# --------------------------------------------------
-# Gamma-mean (logarithmic mean of ρ^γ)
-# --------------------------------------------------
-# Computes ρ̄ = (γ-1)/γ * (ρ_r^γ - ρ_l^γ) / (ρ_r^{γ-1} - ρ_l^{γ-1})
-# with Taylor expansion for near-equal densities to avoid division by zero.
-@inline function gamma_mean(rho_l, rho_r, gamma)
-    avg = 0.5 * (rho_l + rho_r)
-    f = (rho_r - rho_l) / (rho_r + rho_l)
-    ν = f * f
-
-    if ν < 1e-8
-        # Taylor expansion
-        c1 = (gamma - 2.0) / 3.0
-        c2 = -(gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) / 45.0
-        c3 = (gamma + 1.0) * (gamma - 2.0) * (gamma - 3.0) * (2.0 * gamma * (gamma - 2.0) - 9.0) / 945.0
-        return avg * (1.0 + ν * (c1 + ν * (c2 + ν * c3)))
-    else
-        denom = rho_r^(gamma - 1.0) - rho_l^(gamma - 1.0)
-        return (gamma - 1.0) / gamma * (rho_r^gamma - rho_l^gamma) / denom
-    end
 end
 
 end # @muladd

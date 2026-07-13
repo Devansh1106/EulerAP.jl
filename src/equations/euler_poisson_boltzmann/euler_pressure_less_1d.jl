@@ -37,4 +37,35 @@ end
     return SVector(zero(u[1]), zero(u[1]))
 end
 
+"""
+    initial_condition_riemann_epb(x, t, equations::EulerPressureLess1D)
+
+Specialized method for the coupled hyperbolic-elliptic system.
+Returns the full hyperbolic state vector (ρ, ρu). Initial value for ϕ
+is calculated in the [`initial_condition`](@ref) in [`semidiscretization_hyperbolic_elliptic`](@ref). 
+"""
+@inline function initial_condition_riemann_epb(x, t, equations::EulerPressureLess1D)
+    if x[1] < 0.5
+        rho = 2.0
+    else
+        rho = 1.0
+    end
+    return SVector{2}(rho, 0.0)
+end
+
+"""
+    initial_condition_five_branch(x, t, equations::EulerPressureLess1D)
+
+Five-branch test problem initial condition.
+- Density: Gaussian profile ρ(0,x) = (1/π) * exp(-(x-π)²)
+- Velocity: Sinusoidal profile u(0,x) = sin³(x)
+Domain: [0, 2π]
+"""
+@inline function initial_condition_five_branch(x, t, equations::EulerPressureLess1D)
+    RealT = eltype(x)
+    rho = one(RealT) / π * exp(-(x[1] - π)^2)
+    u = sin(x[1])^3
+    return SVector(rho, rho * u)
+end
+
 end # @muladd

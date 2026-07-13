@@ -14,7 +14,7 @@ Compute the discrete L¹, L² and L∞ error norms for every conserved
 variable.
 """
 function compute_errors(solution,
-                        semi;
+                        semi::AbstractSemidiscretization;
                         exact_solution)
 
     mesh = semi.mesh
@@ -60,6 +60,79 @@ function compute_errors(solution,
     norms = Vector{ErrorNorms{T}}(undef, nvars)
 
     @inbounds for v in 1:nvars
+        norms[v] = finish(
+            accumulators[v],
+            cell_volume
+        )
+    end
+
+    return AnalysisResult(norms)
+end
+
+function compute_errors(solution,
+                        semi::SemidiscretizationHyperbolicElliptic;
+                        exact_solution)
+
+    mesh = semi.mesh
+    equations_hyperbolic = semi.equations
+    equations_elliptic   = semi.equations_elliptic
+
+    nvars_hyper    = nvariables(equations_hyperbolic)
+    nvars_elliptic = nvariables(equations_elliptic)
+    nvars_total    = nvars_hyper + nvars_elliptic
+
+    nc = ndofs(mesh)
+    n_hyper = nvars_hyper * nc
+
+    u = solution_vector(solution)
+
+    T = eltype(u)
+
+    cell_volume = prod(mesh.dx)
+
+    accumulators = Vector{ErrorAccumulator{T}}(undef, nvars_total)
+
+    @inbounds for v in 1:nvars_total
+        accumulators[v] = ErrorAccumulator(T)
+    end
+
+    for I in eachcell(mesh)
+
+        x = coordinates(I, mesh)
+
+        cell = cell_index(I, semi)
+
+        # Extract hyperbolic part from block layout: u[1:n_hyper] = [ρ₁, m₁, ρ₂, m₂, ...]
+        numerical_hyper = SVector{nvars_hyper}(
+            ntuple(v -> u[global_dof(cell, v, nvars_hyper)], nvars_hyper)
+        )
+
+        # Extract elliptic part from block layout: u[n_hyper+1:end] = [φ₁, φ₂, ...]
+        numerical_elliptic = SVector{nvars_elliptic}(
+            ntuple(v -> u[n_hyper + (cell - 1) * nvars_elliptic + v], nvars_elliptic)
+        )
+
+        # Full numerical state
+        numerical = vcat(numerical_hyper, numerical_elliptic)
+
+        exact = exact_solution(
+            x,
+            solution.t,
+            semi,
+        )
+
+        @inbounds for v in 1:nvars_total
+            accumulate!(
+                accumulators[v],
+                numerical[v] - exact[v]
+            )
+        end
+
+    end
+
+    norms = Vector{ErrorNorms{T}}(undef, nvars_total)
+
+    @inbounds for v in 1:nvars_total
         norms[v] = finish(
             accumulators[v],
             cell_volume

@@ -7,11 +7,11 @@ using EulerAP
 mesh = CartesianMesh(
     (100,),
     (0.0,),
-    (1.0,)
+    (2.0*π,)
     # periodicity = (true,)
 )
-lambda = 1e-4
-tspan = (0.0, 0.05)
+lambda = 1e-2
+tspan = (0.0, 0.2)
 
 # --------------------------------------------------
 # Equations
@@ -40,16 +40,41 @@ solver = FVSolver(
 # Boundary conditions
 # --------------------------------------------------
 
+# function dir_bc_hyperbolic(x, t, equations)
+#     return (0.0, 0.0)
+# end
+
+# function dir_bc_elliptic(x, t, equations)
+#     return 0.0
+# end
+
+# boundary_conditions = (
+#     # hyperbolic case 1D
+#     BoundaryConditions1D(
+#         DirichletBC(dir_bc_hyperbolic),
+#         DirichletBC(dir_bc_hyperbolic)
+#     ),
+#     # elliptic case 1D
+#     BoundaryConditions1D(
+#         DirichletBC(dir_bc_elliptic),
+#         DirichletBC(dir_bc_elliptic)
+#     )
+# )
+
+function hyperbolic_neumann_bc(x, t, equations)
+    return 0.0
+end
+
 boundary_conditions = (
-    # hyperbolic case 1D
+    # hyperbolic case 1D (homogeneous Neumann = zero gradient)
     BoundaryConditions1D(
-        ExtrapolateBC{1}(),
-        ExtrapolateBC{1}()
+        NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc),
+        NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc)
     ),
-    # elliptic case 1D
+    # elliptic case 1D (periodic)
     BoundaryConditions1D(
-        ExtrapolateBC{1}(),
-        ExtrapolateBC{1}()
+        PeriodicBC{1}(),
+        PeriodicBC{1}()
     )
 )
 
@@ -60,7 +85,7 @@ boundary_conditions = (
 semi = SemidiscretizationHyperbolicElliptic(
     mesh,
     (equations_hyperbolic, equations_elliptic),
-    initial_condition_riemann_epb,
+    initial_condition_five_branch,
     solver; # solver_elliptic is default to NewtonRaphson() from NLS
     source_terms = source_terms_hyperbolic,
     source_terms_elliptic = nothing, # elliptic source term is internally constructed for this system
@@ -84,7 +109,7 @@ callbacks = CallbackSet(
     AliveCallback(interval=1),
     PerformanceCallback(),
     SummaryCallback(),
-    AnalysisCallback(interval=2)
+    AnalysisCallback(interval=1)
 )
 
 # --------------------------------------------------
@@ -96,10 +121,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_riemann_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_initial.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_riemann_$(mesh_str)_$(lambda).h5"
+    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_$(lambda).h5"
 
 # --------------------------------------------------
 # Save initial condition
@@ -115,12 +140,10 @@ save_initial_condition(
 # Solve
 # --------------------------------------------------
 
-sol = solve(
-    semi,
-    tspan,
-    integrator;
-    callbacks = callbacks
-)
+sol = solve(semi,
+            tspan,
+            integrator;
+            callbacks = callbacks)
 
 # --------------------------------------------------
 # Save final solution
