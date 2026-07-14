@@ -98,25 +98,65 @@ function set_newton_semi!(newton_cache::NewtonCache, semi::AbstractSemidiscretiz
     return nothing
 end
 
+# function create_elliptic_cache(mesh::CartesianMesh{1},
+#                                equations_elliptic::AbstractEquations,
+#                                solver_elliptic)
+#     nx = ncells(mesh)
+#     T = eltype(mesh.dx)
+
+#     jacobian = Tridiagonal(
+#         zeros(T, nx - 1),
+#         zeros(T, nx),
+#         zeros(T, nx - 1),
+#     )
+
+#     # Create the Newton cache (nonlinear problem created later in set_newton_semi!
+#     # once the semidiscretization is fully constructed)
+#     newton_cache = create_newton_cache(mesh)
+
+#     return EllipticCache(zeros(T, nx),      # dl
+#                          zeros(T, nx),      # d
+#                          zeros(T, nx),      # du
+#                          zeros(T, nx),      # residual
+#                          jacobian,
+#                          newton_cache)
+# end
+
 function create_elliptic_cache(mesh::CartesianMesh{1},
                                equations_elliptic::AbstractEquations,
                                solver_elliptic)
     nx = ncells(mesh)
     T = eltype(mesh.dx)
 
-    jacobian = Tridiagonal(
-        zeros(T, nx - 1),
-        zeros(T, nx),
-        zeros(T, nx - 1),
-    )
+    # Sparse Jacobian prototype with an explicit tridiagonal + periodic-corner
+    # sparsity pattern. A plain `LinearAlgebra.Tridiagonal` cannot store the
+    # (1, nx) / (nx, 1) entries needed for periodic boundary conditions, which
+    # silently made the Newton Jacobian inconsistent with the (correctly
+    # periodic) residual in `assemble_nonlinear_residual!`.
+    rows = Int[]
+    cols = Int[]
+    for i in 1:nx
+        push!(rows, i); push!(cols, i)              # diagonal
+        if i > 1
+            push!(rows, i); push!(cols, i - 1)       # sub-diagonal
+        end
+        if i < nx
+            push!(rows, i); push!(cols, i + 1)       # super-diagonal
+        end
+    end
+    if nx > 2
+        push!(rows, 1);  push!(cols, nx)             # periodic corner
+        push!(rows, nx); push!(cols, 1)              # periodic corner
+    end
+    jacobian = sparse(rows, cols, zeros(T, length(rows)), nx, nx)
 
     # Create the Newton cache (nonlinear problem created later in set_newton_semi!
     # once the semidiscretization is fully constructed)
     newton_cache = create_newton_cache(mesh)
 
-    return EllipticCache(zeros(T, nx),      # dl
-                         zeros(T, nx),      # d
-                         zeros(T, nx),      # du
+    return EllipticCache(zeros(T, nx),      # dl (unused now, kept for struct compatibility)
+                         zeros(T, nx),      # d  (unused now, kept for struct compatibility)
+                         zeros(T, nx),      # du (unused now, kept for struct compatibility)
                          zeros(T, nx),      # residual
                          jacobian,
                          newton_cache)

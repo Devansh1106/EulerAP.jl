@@ -192,7 +192,7 @@ end
         rho_half *
         0.5 *
         (vel_rr + vel_ll) -
-        flux_.eta *
+        flux_.eta *dt*
         (phi_rr - phi_ll) / dx
 
     # --------------------------------------------------
