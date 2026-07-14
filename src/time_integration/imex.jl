@@ -6,21 +6,10 @@
 
 using TimerOutputs
 
-@inline function _cell_var(u, I::CartesianIndex{NDIMS}, semi, t, var::Int) where {NDIMS}
-    state = cell_state(u, I, semi, t)
-    @inbounds return state[var]
-end
-
-@inline function _hyperbolic_state(u,
-                                   I::CartesianIndex{NDIMS},
-                                   semi,
-                                   t) where {NDIMS}
-
+@inline function _hyperbolic_state(u, I, semi, t)
     nvars = nvariables(semi.equations)
-
-    values = ntuple(k -> _cell_var(u, I, semi, t, k), nvars)
-
-    return SVector{nvars}(values)
+    state = cell_state(u, I, semi, t)
+    return SVector{nvars}(ntuple(k -> @inbounds(state[k]), nvars))
 end
 
 """
@@ -157,7 +146,7 @@ end
 # Stage 2: Implicit Prediction (solve elliptic equation)
 # ============================================================================
 # -α(x_{i-1} - 2x_i + x_{i+1}) + f(x_i) = ρ̂_i
-# where α = (λ² + ηΔt) / Δx² and f(x) = exp(x) for Poisson-Boltzmann
+# where α = (λ² + ηΔt^2) / Δx² and f(x) = exp(x) for Poisson-Boltzmann
 # NOTE: Currently 1D-only; 2D requires a 5-point stencil sparse solver.
 # ============================================================================
 
@@ -176,7 +165,7 @@ function perform_stage!(
     solve_newton!(
         cache.phi,
         cache.rho_hat,
-        -(λ^2 + η * dt),
+        -(λ^2 + η * dt^2),
         semi,
         t,
     )
@@ -189,7 +178,7 @@ end
 # ============================================================================
 # F^1_{face} = ρ̄ * (u_r + u_l)/2 - (x_r - x_l) * η/Δx
 # F^2_{face} = u_l * max(F^1, 0) + u_r * max(-F^1, 0)
-# S^2_{face} = ρ̄ * (x_r - x_l) / Δx
+# S^2_{face} = -ρ̄ * (x_r - x_l) / Δx
 #
 # Swept independently along each Cartesian direction.
 # ============================================================================
@@ -211,6 +200,9 @@ function perform_stage!(
 
     # Stage starts from uⁿ
     copyto!(cache.u_new, cache.u)
+
+    # TODO: DEBUG: set phi = 1 for all cells
+    # fill!(cache.phi, 1)
 
     # Read/write buffers
     read_state  = cache.u_new
@@ -309,19 +301,11 @@ function perform_stage!(
             rho_idx = global_dof(cell, 1, nvars)
             mom_idx = global_dof(cell, 2, nvars)
 
-            write_state[rho_idx] =
-                read_state[rho_idx] -
-                (dt / dx) *
-                (right.flux[1] - left.flux[1])
+            write_state[rho_idx] = read_state[rho_idx] - (dt / dx) * (right.flux[1] - left.flux[1])
 
-            write_state[mom_idx] =
-                read_state[mom_idx] -
-                (dt / dx) *
-                (right.flux[2] - left.flux[2])
+            write_state[mom_idx] = read_state[mom_idx] - (dt / dx) * (right.flux[2] - left.flux[2])
 
-            write_state[mom_idx] +=
-                (dt / 2) *
-                (right.source + left.source)
+            write_state[mom_idx] += (dt / 2) * (right.source + left.source)
 
             # if write_state[rho_idx] <= 0
             #     println("Negative density created")
