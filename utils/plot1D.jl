@@ -250,10 +250,29 @@ function main()
     end
 
     # ------------------------------------------------------------------
+    # Momentum subplot (debug)
+    # ------------------------------------------------------------------
+    p_mom = plot(xlabel = "x", ylabel = "mₓ", title = "Momentum")
+
+    # Initial condition from first file (dashed black)
+    plot!(p_mom, init["x"], init["mx"],
+          lw = 2, ls = :dash, color = :black,
+          label = "Initial")
+
+    # Final states from remaining files
+    for (i, f) in enumerate(final_files)
+        ls = LINE_STYLES[(i - 1) % length(LINE_STYLES) + 1]
+        lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
+        plot!(p_mom, f["x"], f["mx"],
+              lw = 2, ls = ls, color = lc,
+              label = legend_labels[i])
+    end
+
+    # ------------------------------------------------------------------
     # Electric potential subplot (if 3+ variables)
     # ------------------------------------------------------------------
-    nrows = nvars >= 3 ? 3 : 2
-    plots = [p1, p2]
+    nrows = nvars >= 3 ? 4 : 3
+    plots = [p1, p2, p_mom]
 
     if nvars >= 3
         p3 = plot(xlabel = "x", ylabel = "φ", title = "Electric Potential")

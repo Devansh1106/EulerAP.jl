@@ -8,11 +8,11 @@ mesh = CartesianMesh(
     (100,),
     (0.0,),
     (2.0*π,)
-    # periodicity = (true,)
+    # periodicity = (true,) # For hyperbolic part only
 )
 lambda = 1e0
 # tspan = (0.0, 0.010)
-tspan = (0.0, 0.2)
+tspan = (0.0, 0.10)
 
 # --------------------------------------------------
 # Equations
@@ -68,9 +68,13 @@ end
 
 boundary_conditions = (
     # hyperbolic case 1D (homogeneous Neumann = zero gradient)
+    # BoundaryConditions1D(
+    #     NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc),
+    #     NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc)
+    # ),
     BoundaryConditions1D(
-        NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc),
-        NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc)
+        ExtrapolateBC{1}(),
+        ExtrapolateBC{1}()
     ),
     # elliptic case 1D (periodic)
     BoundaryConditions1D(

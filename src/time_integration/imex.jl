@@ -27,14 +27,18 @@ where ρ̄ is the γ-mean of the left and right densities.
                                        vel_r,
                                        gamma)
 
-    # Clamp near-zero densities to avoid negative values in gamma_mean
-    # (fractional powers of negative numbers produce complex results)
-    # rho_l = max(rho_l, eps(typeof(rho_l)))
-    # rho_r = max(rho_r, eps(typeof(rho_r)))
-
+    # Central flux (unstable for advection — kept for reference)
     rho_half = gamma_mean(rho_l, rho_r, gamma)
-
     return rho_half * 0.5 * (vel_l + vel_r)
+
+    # Upwind flux based on the left-cell velocity
+    # Positive vel_l => flow rightward, use rho_l
+    # Negative vel_l => flow leftward, use rho_r
+    # if vel_l >= 0
+    #     return rho_l * vel_l
+    # else
+    #     return rho_r * vel_r
+    # end
 
 end
 
@@ -145,7 +149,7 @@ end
 # ============================================================================
 # Stage 2: Implicit Prediction (solve elliptic equation)
 # ============================================================================
-# -α(x_{i-1} - 2x_i + x_{i+1}) + f(x_i) = ρ̂_i
+# -α(x_{i-1} - 2x_i + x_{i+1}) + f(x_i) = ρ̂_i all at time step n+1
 # where α = (λ² + ηΔt^2) / Δx² and f(x) = exp(x) for Poisson-Boltzmann
 # NOTE: Currently 1D-only; 2D requires a 5-point stencil sparse solver.
 # ============================================================================
