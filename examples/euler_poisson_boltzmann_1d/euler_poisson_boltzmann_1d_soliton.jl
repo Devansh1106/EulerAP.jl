@@ -1,18 +1,22 @@
 using EulerAP
 
+
+u0, eta = 1.2, -1e-6 # parameters required for soliton test case calculation
+initial_condition_soliton, L = make_initial_condition_soliton(u0, eta)
+
 # --------------------------------------------------
 # Mesh
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (100,),
+    (800,),
     (0.0,),
-    (2.0*π,)
-    # periodicity = (true,) # For hyperbolic part only
+    (L,),
+    periodicity = (true,) # For hyperbolic part only
 )
-lambda = 1e-4
-# tspan = (0.0, 0.010)
-tspan = (0.0, 1.0)
+lambda = 1.0
+t = L/u0
+tspan = (0.0, t)
 
 # --------------------------------------------------
 # Equations
@@ -41,40 +45,10 @@ solver = FVSolver(
 # Boundary conditions
 # --------------------------------------------------
 
-# function dir_bc_hyperbolic(x, t, equations)
-#     return (0.0, 0.0)
-# end
-
-# function dir_bc_elliptic(x, t, equations)
-#     return 0.0
-# end
-
-# boundary_conditions = (
-#     # hyperbolic case 1D
-#     BoundaryConditions1D(
-#         DirichletBC(dir_bc_hyperbolic),
-#         DirichletBC(dir_bc_hyperbolic)
-#     ),
-#     # elliptic case 1D
-#     BoundaryConditions1D(
-#         DirichletBC(dir_bc_elliptic),
-#         DirichletBC(dir_bc_elliptic)
-#     )
-# )
-
-function hyperbolic_neumann_bc(x, t, equations)
-    return 0.0
-end
-
 boundary_conditions = (
-    # hyperbolic case 1D (homogeneous Neumann = zero gradient)
-    # BoundaryConditions1D(
-    #     NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc),
-    #     NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc)
-    # ),
     BoundaryConditions1D(
-        ExtrapolateBC{1}(),
-        ExtrapolateBC{1}()
+        PeriodicBC{1}(),
+        PeriodicBC{1}()
     ),
     # elliptic case 1D (periodic)
     BoundaryConditions1D(
@@ -90,7 +64,7 @@ boundary_conditions = (
 semi = SemidiscretizationHyperbolicElliptic(
     mesh,
     (equations_hyperbolic, equations_elliptic),
-    initial_condition_five_branch,
+    initial_condition_soliton,
     solver; # solver_elliptic is default to NewtonRaphson() from NLS
     source_terms = source_terms_hyperbolic,
     source_terms_elliptic = nothing, # elliptic source term is internally constructed for this system
@@ -111,10 +85,10 @@ integrator = IMEXIntegrator(
 # --------------------------------------------------
 
 callbacks = CallbackSet(
-    AliveCallback(interval=4),
+    AliveCallback(interval=20),
     PerformanceCallback(),
     SummaryCallback(),
-    AnalysisCallback(interval=4)
+    AnalysisCallback(interval=20)
 )
 
 # --------------------------------------------------
@@ -126,10 +100,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_initial.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_$(lambda).h5"
+    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda).h5"
 
 # --------------------------------------------------
 # Save initial condition

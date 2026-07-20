@@ -27,7 +27,7 @@ end
 #
 #   F_i = -α(x_{i-1} - 2x_i + x_{i+1}) + exp(x_i) - ρ̂_i
 #
-# where α = (λ² + ηΔt)/Δx² is handled by the IMEX solver.
+# where α = (λ² + ηΔt^2)/Δx² is handled by the IMEX solver.
 # This function provides the exp(x_i) term and its Jacobian contribution.
 
 """
@@ -54,5 +54,77 @@ end
 
 
 # TODO: Need to change EulerPressureLess1D to a common type for Hyper+elliptic system. This is a temporary setup.
+
+
+
+# -------------------------------------------------------------------------
+#                              Soliton Test Case
+# -------------------------------------------------------------------------
+# soliton_profile.jl — precompute the Sagdeev-potential soliton profile
+
+sagdeev_rhs(phi, u0) = (1 + 2phi/u0^2)^(-0.5) - exp(-phi)
+
+"""
+Shoot the ODE φ'' = sagdeev_rhs(φ, u0) from φ(0)=0, φ'(0)=η,
+find the peak (φ'=0), and truncate the domain at L = 2*x_peak
+so the profile is (numerically) periodic on [0, L].
+Returns (L, xs, phis) on a fine grid of spacing dx.
+"""
+function solve_soliton_profile(u0, eta; dx=0.005, xmax=200.0)
+    n = Int(round(xmax / dx))
+    xs   = zeros(n)
+    phis = zeros(n)
+    phi, dphi = 0.0, eta
+    imin, phimin = 1, phi
+    for i in 1:n
+        xs[i] = (i - 1) * dx
+        phis[i] = phi
+        if phi < phimin
+            phimin, imin = phi, i
+        end
+        # RK4 step for [phi, dphi]
+        deriv(p, dp) = (dp, sagdeev_rhs(p, u0))
+        k1 = deriv(phi, dphi)
+        k2 = deriv(phi + dx/2*k1[1], dphi + dx/2*k1[2])
+        k3 = deriv(phi + dx/2*k2[1], dphi + dx/2*k2[2])
+        k4 = deriv(phi + dx*k3[1],   dphi + dx*k3[2])
+        phi  += dx/6 * (k1[1] + 2k2[1] + 2k3[1] + k4[1])
+        dphi += dx/6 * (k1[2] + 2k2[2] + 2k3[2] + k4[2])
+    end
+    L = 2 * xs[imin]
+    iL = Int(round(L / dx))
+    return L, xs[1:iL], phis[1:iL]
+end
+
+"""
+Given the phi-profile, build (rho, u_lab) arrays via (5.2) and the
+lab-frame velocity formula u_lab = u0/n_s(x) + u0 (n0 = 1).
+"""
+function soliton_density_velocity(phis, u0)
+    ns = @. (1 + 2phis/u0^2)^(-0.5)
+    u_lab = @. u0 / ns + u0
+    return ns, u_lab
+end
+
+# Periodic linear interpolation onto the fine (xs, ys) table
+function interp_periodic(x, L, xs, ys)
+    xm = mod(x, L)
+    dx = xs[2] - xs[1]
+    i = clamp(Int(floor(xm / dx)) + 1, 1, length(xs) - 1)
+    t = (xm - xs[i]) / dx
+    return (1 - t) * ys[i] + t * ys[i + 1]
+end
+
+function make_initial_condition_soliton(u0, eta)
+    L, xs, phis = solve_soliton_profile(u0, eta)
+    ns, u_lab = soliton_density_velocity(phis, u0)
+    ic = @inline function (x, t, equations)
+        RealT = eltype(x)
+        rho = interp_periodic(x[1], L, xs, ns)
+        u   = interp_periodic(x[1], L, xs, u_lab)
+        return SVector(RealT(rho), RealT(rho * u))
+    end
+    return ic, L
+end
 
 end # @muladd

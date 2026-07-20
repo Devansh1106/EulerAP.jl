@@ -150,6 +150,7 @@ export initial_condition_barenblatt
 # EPB system
 export initial_condition_riemann_epb
 export initial_condition_five_branch
+export make_initial_condition_soliton
 
 # Source terms
 export source_terms
