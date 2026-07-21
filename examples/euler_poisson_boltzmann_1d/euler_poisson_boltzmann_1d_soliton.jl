@@ -9,14 +9,17 @@ initial_condition_soliton, L = make_initial_condition_soliton(u0, eta)
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (800,),
+    (1000,),
     (0.0,),
     (L,),
     periodicity = (true,) # For hyperbolic part only
 )
 lambda = 1.0
 t = L/u0
-tspan = (0.0, t)
+t_L = t/5.0
+# t_L = (2.0*t)/5.0
+# t_L = t
+tspan = (0.0, t_L)
 
 # --------------------------------------------------
 # Equations
@@ -103,7 +106,7 @@ initial_filename =
     "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_initial.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda).h5"
+    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda)_$(t_L).h5"
 
 # --------------------------------------------------
 # Save initial condition

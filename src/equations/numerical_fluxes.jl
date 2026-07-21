@@ -188,12 +188,14 @@ end
     # Density flux
     # --------------------------------------------------
 
+    alpha = max(abs(vel_ll), abs(vel_rr))
+
     F_rho =
         rho_half *
         0.5 *
         (vel_rr + vel_ll) -
-        flux_.eta *dt*
-        (phi_rr - phi_ll) / dx
+        flux_.eta * dt *
+        (phi_rr - phi_ll) / dx #- alpha * (rho_rr - rho_ll)
 
     # --------------------------------------------------
     # Upwind splitting

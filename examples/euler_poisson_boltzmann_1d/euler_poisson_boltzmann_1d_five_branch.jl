@@ -5,14 +5,14 @@ using EulerAP
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (100,),
+    (1000,),
     (0.0,),
     (2.0*π,)
     # periodicity = (true,) # For hyperbolic part only
 )
-lambda = 1e-4
+lambda = 1e0
 # tspan = (0.0, 0.010)
-tspan = (0.0, 1.0)
+tspan = (0.0, 0.09)
 
 # --------------------------------------------------
 # Equations
@@ -33,7 +33,7 @@ equations_elliptic = PoissonBoltzmann(
 # --------------------------------------------------
 
 solver = FVSolver(
-    flux = FluxEnergyStable(1.0),
+    flux = FluxEnergyStable(100.0),
     ndims = 1
 )
 
