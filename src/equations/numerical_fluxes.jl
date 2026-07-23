@@ -188,7 +188,7 @@ end
     # Density flux
     # --------------------------------------------------
 
-    alpha = max(abs(vel_ll), abs(vel_rr))
+    # alpha = max(abs(vel_ll), abs(vel_rr))
 
     F_rho =
         rho_half *

@@ -96,18 +96,6 @@ function perform_stage!(
             rho_r = u_rr[1]
             vel_r = u_rr[2] / rho_r
 
-            # if rho_c <= 0 || rho_r <= 0
-            #     error("""
-            #             Negative density entering ExplicitCorrectionStage
-
-            #             time = $t
-            #             cell = $cell
-
-            #             rho_i = $rho_c
-            #             rho_r = $rho_r
-            #             """)
-            # end
-
             flux_rr = explicit_density_flux(rho_c,
                                             rho_r,
                                             vel_c,
@@ -127,6 +115,20 @@ function perform_stage!(
 
             rho_l = u_ll[1]
             vel_l = u_ll[2] / rho_l
+
+
+            if rho_c <= 0 || rho_r <= 0 || rho_l <= 0
+                error("""
+                        Negative density entering ExplicitCorrectionStage
+
+                        time = $t
+                        cell = $cell
+
+                        rho_i = $rho_c
+                        rho_r = $rho_r
+                        rho_l = $rho_l
+                        """)
+            end
 
             flux_ll = explicit_density_flux(rho_l,
                                             rho_c,
@@ -180,7 +182,7 @@ end
 # ============================================================================
 # Stage 3: Implicit Correction (final ρ, ρu update)
 # ============================================================================
-# F^1_{face} = ρ̄ * (u_r + u_l)/2 - (x_r - x_l) * η/Δx
+# F^1_{face} = ρ̄ * (u_r + u_l)/2 - (x_r - x_l) * ηΔt/Δx
 # F^2_{face} = u_l * max(F^1, 0) + u_r * max(-F^1, 0)
 # S^2_{face} = -ρ̄ * (x_r - x_l) / Δx
 #
