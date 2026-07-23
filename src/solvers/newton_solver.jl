@@ -249,27 +249,30 @@ function assemble_nonlinear_jacobian!(J,
     # `check_periodicity_mesh_boundary_conditions`), so checking one side
     # is sufficient.
     periodic = semi.boundary_conditions_elliptic.left isa PeriodicBC
+    left_bc  = semi.boundary_conditions_elliptic.left
+    right_bc = semi.boundary_conditions_elliptic.right
 
     @inbounds for i in 1:nx
-        J[i, i] = -2 * alpha +
-                  elliptic_point_source_derivative(
-                      phi[i],
-                      equations,
-                  )
+        diag = -2 * alpha + elliptic_point_source_derivative(phi[i], equations)
 
         if i > 1
             J[i, i - 1] = alpha
         elseif periodic && nx > 2
-            # Left neighbor of cell 1 wraps around to cell nx
             J[i, nx] = alpha
+        elseif !(left_bc isa DirichletBC)
+            # Neumann/Extrapolate ghost = phi[1] + const  =>  d(ghost)/d(phi[1]) = 1
+            diag += alpha
         end
 
         if i < nx
             J[i, i + 1] = alpha
         elseif periodic && nx > 2
-            # Right neighbor of cell nx wraps around to cell 1
             J[i, 1] = alpha
+        elseif !(right_bc isa DirichletBC)
+            diag += alpha
         end
+
+        J[i, i] = diag
     end
 
     return nothing
