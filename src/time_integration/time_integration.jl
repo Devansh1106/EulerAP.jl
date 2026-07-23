@@ -105,7 +105,7 @@ The cache owns only algorithmic states. Solver-specific workspaces
 (e.g. Newton residuals, Jacobians, Krylov vectors) are owned by the
 `EllipticCache`(@ref).
 """
-struct IMEXCache{TU,TP, TR, TW}
+mutable struct IMEXCache{TU,TP, TR, TW, TE}
     # Current solution u^n
     u::TU
 
@@ -120,6 +120,8 @@ struct IMEXCache{TU,TP, TR, TW}
     # Elliptic solution ϕ^{n+1}
     phi::TP
 
+    # Diffusion coefficient η, recomputed each timestep
+    eta::TE
 end
 
 function IMEXCache(u0, phi0)
@@ -131,7 +133,8 @@ function IMEXCache(u0, phi0)
               rho_hat,
               Vector{T}(undef, n),
               Vector{T}(undef, n),
-              phi0)
+              phi0,
+              zero(T))
 end
 
 """
