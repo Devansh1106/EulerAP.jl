@@ -149,6 +149,49 @@ function perform_stage!(
 end
 
 # ============================================================================
+# compute_eta!
+# ============================================================================
+# Compute the coefficient η as the maximum over all interfaces of
+#
+#     η = max_i  1.5 * (ρ̄_{i+1/2})² / ρ_i
+#
+# where ρ̄_{i+1/2} = gamma_mean(ρ_i, ρ_{i+1}, γ).
+# ============================================================================
+
+@inline function compute_eta!(cache::IMEXCache, semi::AbstractSemidiscretization)
+    equations = semi.equations
+    mesh      = semi.mesh
+    gamma     = equations.gamma
+
+    T = eltype(mesh.dx)
+    eta_val = zero(T)
+
+    @inbounds for I in eachcell(mesh)
+        # Center density
+        u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
+        rho_c = u_cc[1]
+
+        # Right neighbor
+        Ip1 = neighbor_index(I, semi, 1, 1)
+        u_rr = _hyperbolic_state(cache.u, Ip1, semi, zero(T))
+        rho_r = u_rr[1]
+
+        # Gamma-mean at right interface
+        rho_half = gamma_mean(rho_c, rho_r, gamma)
+
+        # Local contribution: 1.5 * (ρ̄)² / ρ_i
+        if rho_c > zero(T)
+            eta_val = 1.5 * rho_half^2 / rho_c
+        else
+            error("Density is negative: rho_i = $rho_c")
+        end
+    end
+
+    cache.eta = eta_val
+    return nothing
+end
+
+# ============================================================================
 # Stage 2: Implicit Prediction (solve elliptic equation)
 # ============================================================================
 # -α(x_{i-1} - 2x_i + x_{i+1}) + f(x_i) = ρ̂_i all at time step n+1
@@ -165,8 +208,11 @@ function perform_stage!(
     t,
 )
 
+    # Compute diffusion coefficient from current density
+    compute_eta!(cache, semi)
+
     λ = semi.equations_elliptic.lambda
-    η = semi.solver.flux.eta
+    η = cache.eta
 
     solve_newton!(
         cache.phi,
@@ -267,6 +313,7 @@ function perform_stage!(
                 equations,
                 dt,
                 dx,
+                cache.eta,
             )
 
             # --------------------------------------------------
@@ -298,6 +345,7 @@ function perform_stage!(
                 equations,
                 dt,
                 dx,
+                cache.eta,
             )
 
             # --------------------------------------------------
