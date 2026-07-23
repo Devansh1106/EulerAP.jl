@@ -105,7 +105,7 @@ Energy-stable numerical flux for the relaxation Euler system, normal to the
 
     # Upwind splitting
     Fp = max(F_rho, 0.0)
-    Fm = max(-F_rho, 0.0)
+    Fm = min(F_rho, 0.0)
 
     # Assemble flux vector (dimension-agnostic)
     N = length(u_ll)
@@ -160,9 +160,8 @@ end
     orientation,
     equations::AbstractHyperbolicEquations,
     dt,
-    dx)
-
-    # eta_dt = flux_.eta * dt
+    dx,
+    eta = flux_.eta) # default value
 
     # --------------------------------------------------
     # Left / right states
@@ -188,21 +187,20 @@ end
     # Density flux
     # --------------------------------------------------
 
-    # alpha = max(abs(vel_ll), abs(vel_rr))
 
     F_rho =
         rho_half *
         0.5 *
         (vel_rr + vel_ll) -
-        flux_.eta * dt *
-        (phi_rr - phi_ll) / dx #- alpha * (rho_rr - rho_ll)
+        eta * dt *
+        (phi_rr - phi_ll) / dx
 
     # --------------------------------------------------
     # Upwind splitting
     # --------------------------------------------------
 
     Fp = max(F_rho, zero(F_rho))
-    Fm = max(-F_rho, zero(F_rho))
+    Fm = min(F_rho, zero(F_rho))
 
     # --------------------------------------------------
     # Hyperbolic numerical flux
