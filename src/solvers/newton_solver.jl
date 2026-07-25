@@ -157,7 +157,7 @@
 
 Assemble the nonlinear residual
 
-    c Δφ + f(φ) = rhs
+    c Δφ + f(φ) - rhs = 0
 
 where
 
@@ -252,6 +252,8 @@ function assemble_nonlinear_jacobian!(J,
     left_bc  = semi.boundary_conditions_elliptic.left
     right_bc = semi.boundary_conditions_elliptic.right
 
+    fill!(J.nzval, zero(eltype(J)))
+    
     @inbounds for i in 1:nx
         diag = -2 * alpha + elliptic_point_source_derivative(phi[i], equations)
 

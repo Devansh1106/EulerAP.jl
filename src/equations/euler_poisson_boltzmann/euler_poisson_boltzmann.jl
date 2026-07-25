@@ -50,7 +50,7 @@ For the Poisson-Boltzmann equation, this is exp(x).
     return exp(x_i)
 end
 
-@inline initial_laplacian_coefficient(equations::AbstractEllipticEquations) = -equations.lambda^2
+@inline initial_laplacian_coefficient(equations::AbstractEllipticEquations) = -(equations.lambda^2)
 
 
 # TODO: Need to change EulerPressureLess1D to a common type for Hyper+elliptic system. This is a temporary setup.
@@ -62,7 +62,7 @@ end
 # -------------------------------------------------------------------------
 # soliton_profile.jl — precompute the Sagdeev-potential soliton profile
 
-sagdeev_rhs(phi, u0) = (1 + 2phi/u0^2)^(-0.5) - exp(-phi)
+sagdeev_rhs(phi, u0) = (1 + 2 * phi/u0^2)^(-0.5) - exp(-phi)
 
 """
 Shoot the ODE φ'' = sagdeev_rhs(φ, u0) from φ(0)=0, φ'(0)=η,
@@ -70,8 +70,9 @@ find the peak (φ'=0), and truncate the domain at L = 2*x_peak
 so the profile is (numerically) periodic on [0, L].
 Returns (L, xs, phis) on a fine grid of spacing dx.
 """
-function solve_soliton_profile(u0, eta; dx=0.005, xmax=200.0)
-    n = Int(round(xmax / dx))
+function solve_soliton_profile(u0, eta; n=100000)
+    xmax = 50.0
+    dx = xmax / n
     xs   = zeros(n)
     phis = zeros(n)
     phi, dphi = 0.0, eta
@@ -92,17 +93,21 @@ function solve_soliton_profile(u0, eta; dx=0.005, xmax=200.0)
         dphi += dx/6 * (k1[2] + 2k2[2] + 2k3[2] + k4[2])
     end
     L = 2 * xs[imin]
-    iL = Int(round(L / dx))
+    iL = 2 * imin - 1
+    if iL > n
+        iL = n
+        L = xs[iL]
+    end
     return L, xs[1:iL], phis[1:iL]
 end
 
 """
 Given the phi-profile, build (rho, u_lab) arrays via (5.2) and the
-lab-frame velocity formula u_lab = u0/n_s(x) + u0 (n0 = 1).
+lab-frame velocity formula u_lab = u0 + u0/n_s(x) (n0 = 1).
 """
 function soliton_density_velocity(phis, u0)
     ns = @. (1 + 2phis/u0^2)^(-0.5)
-    u_lab = @. u0 / ns + u0
+    u_lab = @. u0 + u0 / ns
     return ns, u_lab
 end
 

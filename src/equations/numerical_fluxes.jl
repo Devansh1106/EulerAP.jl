@@ -146,7 +146,7 @@ end
 # Normal momentum flux:
 #   F^2_{i+1/2} = vel_l * (F^1)^+ + vel_r * (F^1)^-
 #
-# where (·)^+ = max(·, 0), (·)^- = max(-·, 0), vel = m/rho.
+# where (·)^+ = max(·, 0), (·)^- = min(·, 0), vel = m/rho.
 # --------------------------------------------------
 # Energy-stable flux for Euler-Poisson-Boltzmann
 # --------------------------------------------------

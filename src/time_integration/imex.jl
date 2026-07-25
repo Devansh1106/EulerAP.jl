@@ -30,16 +30,6 @@ where ρ̄ is the γ-mean of the left and right densities.
     # Central flux (unstable for advection — kept for reference)
     rho_half = gamma_mean(rho_l, rho_r, gamma)
     return rho_half * 0.5 * (vel_l + vel_r)
-
-    # Upwind flux based on the left-cell velocity
-    # Positive vel_l => flow rightward, use rho_l
-    # Negative vel_l => flow leftward, use rho_r
-    # if vel_l >= 0
-    #     return rho_l * vel_l
-    # else
-    #     return rho_r * vel_r
-    # end
-
 end
 
 # ============================================================================
@@ -96,12 +86,6 @@ function perform_stage!(
             rho_r = u_rr[1]
             vel_r = u_rr[2] / rho_r
 
-            flux_rr = explicit_density_flux(rho_c,
-                                            rho_r,
-                                            vel_c,
-                                            vel_r,
-                                            gamma)
-
             # -----------------------------
             # Left state
             # -----------------------------
@@ -116,7 +100,6 @@ function perform_stage!(
             rho_l = u_ll[1]
             vel_l = u_ll[2] / rho_l
 
-
             if rho_c <= 0 || rho_r <= 0 || rho_l <= 0
                 error("""
                         Negative density entering ExplicitCorrectionStage
@@ -129,6 +112,12 @@ function perform_stage!(
                         rho_l = $rho_l
                         """)
             end
+
+            flux_rr = explicit_density_flux(rho_c,
+                                            rho_r,
+                                            vel_c,
+                                            vel_r,
+                                            gamma)
 
             flux_ll = explicit_density_flux(rho_l,
                                             rho_c,
@@ -181,7 +170,9 @@ end
 
         # Local contribution: 1.5 * (ρ̄)² / ρ_i
         if rho_c > zero(T)
-            eta_val = 1.5 * rho_half^2 / rho_c
+            # for now using w/o max TODO
+            eta_val = max(eta_val, 1.5 * rho_half^2 / rho_c)
+            # eta_val = 1.5 * rho_half^2 / rho_c
         else
             error("Density is negative: rho_i = $rho_c")
         end
