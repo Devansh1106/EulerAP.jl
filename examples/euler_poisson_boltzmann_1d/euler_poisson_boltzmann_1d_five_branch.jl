@@ -5,14 +5,14 @@ using EulerAP
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (1000,),
+    (100,),
     (0.0,),
     (2.0*π,)
     # periodicity = (true,) # For hyperbolic part only
 )
 lambda = 1e0
 # tspan = (0.0, 0.010)
-tspan = (0.0, 0.09)
+tspan = (0.0, 1.0)
 
 # --------------------------------------------------
 # Equations
@@ -33,7 +33,7 @@ equations_elliptic = PoissonBoltzmann(
 # --------------------------------------------------
 
 solver = FVSolver(
-    flux = FluxEnergyStable(100.0),
+    flux = FluxEnergyStable(0.0), #0.0 is dummy; it will be overwritten inside by calculating η at every time step
     ndims = 1
 )
 
@@ -41,37 +41,7 @@ solver = FVSolver(
 # Boundary conditions
 # --------------------------------------------------
 
-# function dir_bc_hyperbolic(x, t, equations)
-#     return (0.0, 0.0)
-# end
-
-# function dir_bc_elliptic(x, t, equations)
-#     return 0.0
-# end
-
-# boundary_conditions = (
-#     # hyperbolic case 1D
-#     BoundaryConditions1D(
-#         DirichletBC(dir_bc_hyperbolic),
-#         DirichletBC(dir_bc_hyperbolic)
-#     ),
-#     # elliptic case 1D
-#     BoundaryConditions1D(
-#         DirichletBC(dir_bc_elliptic),
-#         DirichletBC(dir_bc_elliptic)
-#     )
-# )
-
-function hyperbolic_neumann_bc(x, t, equations)
-    return 0.0
-end
-
 boundary_conditions = (
-    # hyperbolic case 1D (homogeneous Neumann = zero gradient)
-    # BoundaryConditions1D(
-    #     NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc),
-    #     NeumannBC{1, typeof(hyperbolic_neumann_bc)}(hyperbolic_neumann_bc)
-    # ),
     BoundaryConditions1D(
         ExtrapolateBC{1}(),
         ExtrapolateBC{1}()

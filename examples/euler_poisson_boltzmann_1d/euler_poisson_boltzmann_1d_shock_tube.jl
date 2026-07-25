@@ -1,25 +1,18 @@
 using EulerAP
 
-
-u0, eta = 1.2, -1e-6 # parameters required for soliton test case calculation
-initial_condition_soliton, L = make_initial_condition_soliton(u0, eta)
-
 # --------------------------------------------------
 # Mesh
 # --------------------------------------------------
 
 mesh = CartesianMesh(
     (100,),
-    (0.0,),
-    (L,),
-    periodicity = (true,) # For hyperbolic part only
+    (-0.2,),
+    (0.2,)
+    # periodicity = (true,) # For hyperbolic part only
 )
-lambda = 1e0
-t = L/u0
-# t_L = t/5.0
-# t_L = (2.0*t)/5.0
-t_L = t
-tspan = (0.0, t_L)
+lambda = 1e-2
+# tspan = (0.0, 0.010)
+tspan = (0.0, 0.2)
 
 # --------------------------------------------------
 # Equations
@@ -40,7 +33,7 @@ equations_elliptic = PoissonBoltzmann(
 # --------------------------------------------------
 
 solver = FVSolver(
-    flux = FluxEnergyStable(0.0),
+    flux = FluxEnergyStable(0.0), # 0.0 is dummy; it will be overwritten inside by calculating η at every time step
     ndims = 1
 )
 
@@ -50,8 +43,8 @@ solver = FVSolver(
 
 boundary_conditions = (
     BoundaryConditions1D(
-        PeriodicBC{1}(),
-        PeriodicBC{1}()
+        ExtrapolateBC{1}(),
+        ExtrapolateBC{1}()
     ),
     # elliptic case 1D (periodic)
     BoundaryConditions1D(
@@ -67,7 +60,7 @@ boundary_conditions = (
 semi = SemidiscretizationHyperbolicElliptic(
     mesh,
     (equations_hyperbolic, equations_elliptic),
-    initial_condition_soliton,
+    initial_condition_shock_tube,
     solver; # solver_elliptic is default to NewtonRaphson() from NLS
     source_terms = source_terms_hyperbolic,
     source_terms_elliptic = nothing, # elliptic source term is internally constructed for this system
@@ -88,10 +81,10 @@ integrator = IMEXIntegrator(
 # --------------------------------------------------
 
 callbacks = CallbackSet(
-    AliveCallback(interval=20),
+    AliveCallback(interval=4),
     PerformanceCallback(),
     SummaryCallback(),
-    AnalysisCallback(interval=20)
+    AnalysisCallback(interval=4)
 )
 
 # --------------------------------------------------
@@ -103,10 +96,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_shock_tube_$(mesh_str)_initial.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda)_$(t_L).h5"
+    "euler_poisson_boltzmann_1d_shock_tube_$(mesh_str)_$(lambda).h5"
 
 # --------------------------------------------------
 # Save initial condition

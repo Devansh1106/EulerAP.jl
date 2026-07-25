@@ -63,9 +63,27 @@ Domain: [0, 2π]
 """
 @inline function initial_condition_five_branch(x, t, equations::EulerPressureLess1D)
     RealT = eltype(x)
-    rho = one(RealT) / π * exp(-(x[1] - π)^2)
+    rho = (one(RealT) / π) * exp(-(x[1] - π)^2)
     u = sin(x[1])^3
-    return SVector(rho, rho * u)
+    return SVector{2}(rho, rho * u)
+end
+
+@inline function initial_condition_seven_branch(x, t, equations::EulerPressureLess1D)
+    RealT = eltype(x)
+    rho = one(RealT) / π * exp(-(x[1] - π)^2)
+    u = sin(2*x[1]) * cos(x[1])
+    return SVector{2}(rho, rho * u)
+end
+
+@inline function initial_condition_shock_tube(x, t, equation::EulerPressureLess1D)
+    RealT = eltype(x)
+    rho = one(RealT)
+    if x[1] < 0.0
+        u = -one(RealT)
+    else
+        u = one(RealT)
+    end
+    return SVector{2}(rho, u)
 end
 
 end # @muladd

@@ -32,7 +32,7 @@ equations_elliptic = PoissonBoltzmann(
 # --------------------------------------------------
 
 solver = FVSolver(
-    flux = FluxEnergyStable(1.0),
+    flux = FluxEnergyStable(0.0),
     ndims = 1
 )
 
