@@ -83,7 +83,7 @@ end
     else
         u = one(RealT)
     end
-    return SVector{2}(rho, u)
+    return SVector{2}(rho, rho*u)
 end
 
 end # @muladd

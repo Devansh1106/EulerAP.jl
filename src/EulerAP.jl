@@ -5,6 +5,7 @@ using StaticArrays
 using LinearAlgebra: Tridiagonal
 using SparseArrays: spzeros, sparse
 using ForwardDiff
+using Interpolations
 
 using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution, NonlinearProblem, reinit!, solve!
 using NonlinearSolve: NonlinearFunction, NonlinearProblem, NewtonRaphson, NonlinearSolve, init

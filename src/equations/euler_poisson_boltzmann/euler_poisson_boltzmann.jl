@@ -62,7 +62,7 @@ end
 # -------------------------------------------------------------------------
 # soliton_profile.jl — precompute the Sagdeev-potential soliton profile
 
-sagdeev_rhs(phi, u0) = (1 + 2 * phi/u0^2)^(-0.5) - exp(-phi)
+sagdeev_rhs(phi, u0) = (1 + 2 * phi/(u0^2))^(-0.5) - exp(-phi)
 
 """
 Shoot the ODE φ'' = sagdeev_rhs(φ, u0) from φ(0)=0, φ'(0)=η,
@@ -70,7 +70,7 @@ find the peak (φ'=0), and truncate the domain at L = 2*x_peak
 so the profile is (numerically) periodic on [0, L].
 Returns (L, xs, phis) on a fine grid of spacing dx.
 """
-function solve_soliton_profile(u0, eta; n=100000)
+function solve_soliton_profile(u0, eta; n=10000)
     xmax = 50.0
     dx = xmax / n
     xs   = zeros(n)
@@ -106,27 +106,25 @@ Given the phi-profile, build (rho, u_lab) arrays via (5.2) and the
 lab-frame velocity formula u_lab = u0 + u0/n_s(x) (n0 = 1).
 """
 function soliton_density_velocity(phis, u0)
-    ns = @. (1 + 2phis/u0^2)^(-0.5)
+    ns = @. (1 + 2*phis/u0^2)^(-0.5)
     u_lab = @. u0 + u0 / ns
     return ns, u_lab
-end
-
-# Periodic linear interpolation onto the fine (xs, ys) table
-function interp_periodic(x, L, xs, ys)
-    xm = mod(x, L)
-    dx = xs[2] - xs[1]
-    i = clamp(Int(floor(xm / dx)) + 1, 1, length(xs) - 1)
-    t = (xm - xs[i]) / dx
-    return (1 - t) * ys[i] + t * ys[i + 1]
 end
 
 function make_initial_condition_soliton(u0, eta)
     L, xs, phis = solve_soliton_profile(u0, eta)
     ns, u_lab = soliton_density_velocity(phis, u0)
+    # Construct a uniform range for scaling (Interpolations.jl requires AbstractRange)
+    dx = xs[2] - xs[1]
+    x_range = xs[1]:dx:xs[end]
+    # Precompute periodic cubic spline interpolants (coefficients computed once)
+    ns_interp = scale(interpolate(ns, BSpline(Cubic(Periodic(OnGrid())))), x_range)
+    u_interp  = scale(interpolate(u_lab, BSpline(Cubic(Periodic(OnGrid())))), x_range)
     ic = @inline function (x, t, equations)
         RealT = eltype(x)
-        rho = interp_periodic(x[1], L, xs, ns)
-        u   = interp_periodic(x[1], L, xs, u_lab)
+        xw = x[1]
+        rho = ns_interp(xw)
+        u   = u_interp(xw)
         return SVector(RealT(rho), RealT(rho * u))
     end
     return ic, L

@@ -171,7 +171,7 @@ end
         # Local contribution: 1.5 * (ρ̄)² / ρ_i
         if rho_c > zero(T)
             # for now using w/o max TODO
-            eta_val = max(eta_val, 1.5 * rho_half^2 / rho_c)
+            eta_val = max(eta_val, 1.5 * (rho_half^2) / rho_c)
             # eta_val = 1.5 * rho_half^2 / rho_c
         else
             error("Density is negative: rho_i = $rho_c")
