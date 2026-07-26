@@ -107,7 +107,7 @@ lab-frame velocity formula u_lab = u0 + u0/n_s(x) (n0 = 1).
 """
 function soliton_density_velocity(phis, u0)
     ns = @. (1 + 2*phis/u0^2)^(-0.5)
-    u_lab = @. u0 + u0 / ns
+    u_lab = @. u0 - u0 / ns
     return ns, u_lab
 end
 
