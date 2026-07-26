@@ -216,14 +216,14 @@ function main()
     # ------------------------------------------------------------------
     p1 = plot(xlabel = "x", ylabel = "ρ", title = "Density")
 
-    # Initial condition from first file (dashed black)
+    # Initial condition from first file (solid black)
     plot!(p1, init["x"], init["rho"],
-          lw = 2, ls = :dash, color = :black,
+          lw = 2, ls = :solid, color = :black,
           label = "Initial")
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        ls = LINE_STYLES[(i - 1) % length(LINE_STYLES) + 1]
+        ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
         lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
         plot!(p1, f["x"], f["rho"],
               lw = 2, ls = ls, color = lc,
@@ -235,14 +235,14 @@ function main()
     # ------------------------------------------------------------------
     p2 = plot(xlabel = "x", ylabel = "uₓ", title = "Velocity")
 
-    # Initial condition from first file (dashed black)
+    # Initial condition from first file (solid black)
     plot!(p2, init["x"], init["ux"],
-          lw = 2, ls = :dash, color = :black,
+          lw = 2, ls = :solid, color = :black,
           label = "Initial")
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        ls = LINE_STYLES[(i - 1) % length(LINE_STYLES) + 1]
+        ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
         lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
         plot!(p2, f["x"], f["ux"],
               lw = 2, ls = ls, color = lc,
@@ -254,14 +254,14 @@ function main()
     # ------------------------------------------------------------------
     p_mom = plot(xlabel = "x", ylabel = "mₓ", title = "Momentum")
 
-    # Initial condition from first file (dashed black)
+    # Initial condition from first file (solid black)
     plot!(p_mom, init["x"], init["mx"],
-          lw = 2, ls = :dash, color = :black,
+          lw = 2, ls = :solid, color = :black,
           label = "Initial")
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        ls = LINE_STYLES[(i - 1) % length(LINE_STYLES) + 1]
+        ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
         lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
         plot!(p_mom, f["x"], f["mx"],
               lw = 2, ls = ls, color = lc,
@@ -277,15 +277,15 @@ function main()
     if nvars >= 3
         p3 = plot(xlabel = "x", ylabel = "φ", title = "Electric Potential")
 
-        # Initial condition from first file (dashed black)
+        # Initial condition from first file (solid black)
         plot!(p3, init["x"], init["phi"],
-              lw = 2, ls = :dash, color = :black,
+              lw = 2, ls = :solid, color = :black,
               label = "Initial")
 
         # Final states from remaining files
         for (i, f) in enumerate(final_files)
             if haskey(f, "phi")
-                ls = LINE_STYLES[(i - 1) % length(LINE_STYLES) + 1]
+                ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
                 lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
                 plot!(p3, f["x"], f["phi"],
                       lw = 2, ls = ls, color = lc,
