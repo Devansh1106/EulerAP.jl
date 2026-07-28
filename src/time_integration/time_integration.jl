@@ -146,7 +146,7 @@ Advance the semidiscretization using the IMEX solver.
 function solve(semi,
                tspan,
                integrator::IMEXIntegrator;
-               dt = minimum_cell_size(semi.mesh) * 0.1,
+               dt = minimum_cell_size(semi.mesh),
                callbacks=CallbackSet())
 
     return solve_imex(semi,
