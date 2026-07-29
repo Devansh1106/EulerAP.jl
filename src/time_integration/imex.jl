@@ -641,6 +641,10 @@ function solve_imex(semi::AbstractSemidiscretization,
                 callbacks,
                 context,
             )
+
+            delete!(stats.timer.inner_timers, "ExplicitCorrectionStage")
+            delete!(stats.timer.inner_timers, "ImplicitPredictionStage")
+            delete!(stats.timer.inner_timers, "ImplicitCorrectionStage")
         end
     end
     finalize_callbacks!(callbacks, context)

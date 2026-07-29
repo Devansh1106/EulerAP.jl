@@ -60,7 +60,7 @@ Cache holding all Newton-related state for the elliptic solver.
 """
 mutable struct NewtonCache{TP}
     params::TP
-    nonlinear_cache::Any # TODO: need to think of a way to remove this type instability
+    nonlinear_cache::Union{Nothing, Any}
 end
 
 function create_newton_cache(mesh::CartesianMesh)

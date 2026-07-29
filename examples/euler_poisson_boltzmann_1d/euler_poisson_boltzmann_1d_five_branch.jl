@@ -12,7 +12,7 @@ mesh = CartesianMesh(
 )
 lambda = 1e0
 # tspan = (0.0, 0.010)
-tspan = (0.0, 1.0)
+tspan = (0.0, 0.003)
 
 # --------------------------------------------------
 # Equations
