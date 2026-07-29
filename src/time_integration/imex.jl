@@ -194,7 +194,13 @@ end
     dx = mesh.dx[1]
     time = t
 
-    dt_val = typemax(T)
+    k_val = typemin(T)
+    cell_min_dt = 0
+    rho_c_min = zero(T)
+    rho_r_min = zero(T)
+    rho_half_min = zero(T)
+    vel_c_min = zero(T)
+    phi_diff_min = zero(T)
 
     @inbounds for I in eachcell(mesh)
         cell = cell_index(I, semi)
@@ -215,36 +221,57 @@ end
         # Potential at right neighbor
         phi_r = _elliptic_var(cache.phi, Ip1, semi, zero(T))
 
+        # Density check
+        if rho_c < 1e-10 || rho_r < 1e-10
+            error("""
+                  Density below threshold in compute_dt!
+                  time    = $t
+                  cell    = $cell
+                  rho_c   = $rho_c
+                  rho_r   = $rho_r
+                  eta     = $eta
+                  min_rho = $(min(rho_c, rho_r))
+                  """)
+        end
+
         # Gamma-mean at right interface
         rho_half = gamma_mean(rho_c, rho_r, gamma)
 
         # Numerator: (Δx/5) * min(ρ_i, ρ_{i+1}) / ρ̄_{i+1/2}
-        num = (dx / 5) * min(rho_c, rho_r) / rho_half
+        min_rho = min(rho_c, rho_r)
 
         # Denominator: |u_i| + sqrt(η * |φ_{i+1} - φ_i| / ρ̄_{i+1/2})
         phi_diff = abs(phi_r - phi_c)
         sqrt_term = sqrt(eta * phi_diff / rho_half)
-        denom = abs(vel_c) + sqrt_term
+        part2 = abs(vel_c) + sqrt_term
+        k = part2 * rho_half / min_rho
 
-        # dt_val = min(dt_val, num / denom)
-        dt_candidate = num / denom
-
-        if dt_candidate < dt_val
-            println("  time = $time")
-            println("compute_dt! new minimum")
-            println("  cell = ", cell)
-            println("  rho_c = ", rho_c)
-            println("  rho_r = ", rho_r)
-            println("  rho_half = ", rho_half)
-            println("  eta = ", eta)
-            println("  phi_r - phi_c = ", phi_r - phi_c)
-            println("  vel_c = ", vel_c)
-            println("  dt_candidate = ", dt_candidate)
+        if k > k_val
+            k_val = k
+            cell_min_dt = cell
+            rho_c_min = rho_c
+            rho_r_min = rho_r
+            rho_half_min = rho_half
+            vel_c_min = vel_c
+            phi_diff_min = phi_diff
         end
-
-        dt_val = min(dt_val, dt_candidate)
     end
-
+    println("dt diagnostics: cell=$cell_min_dt rho_c=$rho_c_min rho_r=$rho_r_min rho_half=$rho_half_min vel_c=$vel_c_min phi_diff=$phi_diff_min k_val=$k_val")
+    dt_val = (dx / 5) * k_val^(-1)
+    if dt_val < 1e-6
+        error("""
+              dt below threshold in compute_dt!
+              time      = $t
+              dt        = $dt_val
+              eta       = $eta
+              cell      = $cell_min_dt
+              rho_c     = $rho_c_min
+              rho_r     = $rho_r_min
+              rho_half  = $rho_half_min
+              vel_c     = $vel_c_min
+              phi_diff  = $phi_diff_min
+              """)
+    end
     return dt_val
 end
 

@@ -79,9 +79,9 @@ end
     RealT = eltype(x)
     rho = one(RealT)
     if x[1] < 0.0
-        u = -one(RealT)
-    else
         u = one(RealT)
+    else
+        u = -one(RealT)
     end
     return SVector{2}(rho, rho*u)
 end
