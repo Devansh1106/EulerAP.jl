@@ -222,7 +222,7 @@ end
         phi_r = _elliptic_var(cache.phi, Ip1, semi, zero(T))
 
         # Density check
-        if rho_c < 1e-10 || rho_r < 1e-10
+        if rho_c < 1e-6 || rho_r < 1e-6
             error("""
                   Density below threshold in compute_dt!
                   time    = $t
@@ -239,12 +239,15 @@ end
 
         # Numerator: (Δx/5) * min(ρ_i, ρ_{i+1}) / ρ̄_{i+1/2}
         min_rho = min(rho_c, rho_r)
+        # min_rho_safe = max(min_rho, 1e-4)
 
         # Denominator: |u_i| + sqrt(η * |φ_{i+1} - φ_i| / ρ̄_{i+1/2})
         phi_diff = abs(phi_r - phi_c)
-        sqrt_term = sqrt(eta * phi_diff / rho_half)
+        sqrt_term = sqrt(eta * phi_diff) / rho_half
         part2 = abs(vel_c) + sqrt_term
-        k = part2 * rho_half / min_rho
+        _rhs = min_rho / rho_half
+        _rhs = min(1, _rhs)
+        k = part2 / _rhs
 
         if k > k_val
             k_val = k
@@ -256,8 +259,9 @@ end
             phi_diff_min = phi_diff
         end
     end
-    println("dt diagnostics: cell=$cell_min_dt rho_c=$rho_c_min rho_r=$rho_r_min rho_half=$rho_half_min vel_c=$vel_c_min phi_diff=$phi_diff_min k_val=$k_val")
+    # println("dt diagnostics: cell=$cell_min_dt rho_c=$rho_c_min rho_r=$rho_r_min rho_half=$rho_half_min vel_c=$vel_c_min phi_diff=$phi_diff_min k_val=$k_val")
     dt_val = (dx / 5) * k_val^(-1)
+    # dt_val = max(1e-6, dt_val)
     if dt_val < 1e-6
         error("""
               dt below threshold in compute_dt!
