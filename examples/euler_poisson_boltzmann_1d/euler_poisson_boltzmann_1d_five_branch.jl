@@ -5,7 +5,7 @@ using EulerAP
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (100,),
+    (500,),
     (0.0,),
     (2.0*π,)
     # periodicity = (true,) # For hyperbolic part only

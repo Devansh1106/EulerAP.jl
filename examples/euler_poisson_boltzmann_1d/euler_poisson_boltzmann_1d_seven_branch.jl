@@ -11,8 +11,8 @@ mesh = CartesianMesh(
     # periodicity = (true,) # For hyperbolic part only
 )
 lambda = 1e0
-# tspan = (0.0, 0.010)
-tspan = (0.0, 0.57)
+# tspan = (0.0, 0.575)
+tspan = (0.0, 1.0)
 
 # --------------------------------------------------
 # Equations

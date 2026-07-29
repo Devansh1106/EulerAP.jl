@@ -6,12 +6,12 @@ using EulerAP
 
 mesh = CartesianMesh(
     (100,),
-    (0.0,),
-    (1.0,)
+    (-0.2,),
+    (0.2,)
     # periodicity = (true,)
 )
-lambda = 1e-4
-tspan = (0.0, 0.05)
+lambda = 1e-2
+tspan = (0.0, 0.1)
 
 # --------------------------------------------------
 # Equations
@@ -48,8 +48,8 @@ boundary_conditions = (
     ),
     # elliptic case 1D
     BoundaryConditions1D(
-        ExtrapolateBC{1}(),
-        ExtrapolateBC{1}()
+        PeriodicBC{1}(),
+        PeriodicBC{1}()
     )
 )
 
@@ -60,7 +60,7 @@ boundary_conditions = (
 semi = SemidiscretizationHyperbolicElliptic(
     mesh,
     (equations_hyperbolic, equations_elliptic),
-    initial_condition_riemann_epb,
+    initial_condition_shock_tube,
     solver; # solver_elliptic is default to NewtonRaphson() from NLS
     source_terms = source_terms_hyperbolic,
     source_terms_elliptic = nothing, # elliptic source term is internally constructed for this system

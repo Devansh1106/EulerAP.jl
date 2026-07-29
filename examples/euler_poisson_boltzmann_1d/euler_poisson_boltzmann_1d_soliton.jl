@@ -16,9 +16,9 @@ mesh = CartesianMesh(
 )
 lambda = 1e0
 t = L/u0
-# t_L = t/5.0
+t_L = t/5.0
 # t_L = (2.0*t)/5.0
-t_L = t
+# t_L = t
 tspan = (0.0, t_L)
 
 # --------------------------------------------------
@@ -27,7 +27,7 @@ tspan = (0.0, t_L)
 
 # Hyperbolic: pressure-less Euler
 equations_hyperbolic = EulerPressureLess1D(
-    gamma = 1.4
+    gamma = 3.0
 )
 
 # Elliptic: Poisson-Boltzmann
