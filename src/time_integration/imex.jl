@@ -184,6 +184,101 @@ end
     return nothing
 end
 
+# @inline function compute_dt!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
+#     equations = semi.equations
+#     mesh      = semi.mesh
+#     gamma     = equations.gamma
+#     eta       = cache.eta
+
+#     T = eltype(mesh.dx)
+#     dx = mesh.dx[1]
+#     time = t
+
+#     k_val = typemin(T)
+#     cell_min_dt = 0
+#     rho_c_min = zero(T)
+#     rho_r_min = zero(T)
+#     rho_half_min = zero(T)
+#     vel_c_min = zero(T)
+#     phi_diff_min = zero(T)
+
+#     @inbounds for I in eachcell(mesh)
+#         cell = cell_index(I, semi)
+
+#         # Center state
+#         u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
+#         rho_c = u_cc[1]
+#         vel_c = u_cc[2] / rho_c
+
+#         # Potential at center
+#         phi_c = _elliptic_var(cache.phi, I, semi, zero(T))
+
+#         # Right neighbor
+#         Ip1 = neighbor_index(I, semi, 1, 1)
+#         u_rr = _hyperbolic_state(cache.u, Ip1, semi, zero(T))
+#         rho_r = u_rr[1]
+
+#         # Potential at right neighbor
+#         phi_r = _elliptic_var(cache.phi, Ip1, semi, zero(T))
+
+#         # Density check
+#         if rho_c < 1e-6 || rho_r < 1e-6
+#             error("""
+#                   Density below threshold in compute_dt!
+#                   time    = $t
+#                   cell    = $cell
+#                   rho_c   = $rho_c
+#                   rho_r   = $rho_r
+#                   eta     = $eta
+#                   min_rho = $(min(rho_c, rho_r))
+#                   """)
+#         end
+
+#         # Gamma-mean at right interface
+#         rho_half = gamma_mean(rho_c, rho_r, gamma)
+
+#         # Numerator: (Δx/5) * min(ρ_i, ρ_{i+1}) / ρ̄_{i+1/2}
+#         min_rho = min(rho_c, rho_r)
+#         # min_rho_safe = max(min_rho, 1e-4)
+
+#         # Denominator: |u_i| + sqrt(η * |φ_{i+1} - φ_i| / ρ̄_{i+1/2})
+#         phi_diff = abs(phi_r - phi_c)
+#         sqrt_term = sqrt(eta * phi_diff) / rho_half
+#         part2 = abs(vel_c) + sqrt_term
+#         _rhs = min_rho / rho_half
+#         _rhs = min(1, _rhs)
+#         k = part2 / _rhs
+
+#         if k > k_val
+#             k_val = k
+#             cell_min_dt = cell
+#             rho_c_min = rho_c
+#             rho_r_min = rho_r
+#             rho_half_min = rho_half
+#             vel_c_min = vel_c
+#             phi_diff_min = phi_diff
+#         end
+#     end
+#     # println("dt diagnostics: cell=$cell_min_dt rho_c=$rho_c_min rho_r=$rho_r_min rho_half=$rho_half_min vel_c=$vel_c_min phi_diff=$phi_diff_min k_val=$k_val")
+#     dt_val = (dx / 5) * k_val^(-1)
+#     # dt_val = max(1e-6, dt_val)
+#     if dt_val < 1e-6
+#         error("""
+#               dt below threshold in compute_dt!
+#               time      = $t
+#               dt        = $dt_val
+#               eta       = $eta
+#               cell      = $cell_min_dt
+#               rho_c     = $rho_c_min
+#               rho_r     = $rho_r_min
+#               rho_half  = $rho_half_min
+#               vel_c     = $vel_c_min
+#               phi_diff  = $phi_diff_min
+#               """)
+#     end
+#     return dt_val
+# end
+
 @inline function compute_dt!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
     equations = semi.equations
     mesh      = semi.mesh
@@ -192,88 +287,83 @@ end
 
     T = eltype(mesh.dx)
     dx = mesh.dx[1]
-    time = t
 
+    # Condition 1: η Δt/Δx < 1  ⇒  Δt < Δx / η
+    dt_eta = dx / eta
+
+    # Condition 2: find max rate k over all interfaces
+    #   k = |ρ̄_{i+1/2} u_{i+1/2} + |φ_{i+1} - φ_i|| / min(ρ_i, ρ_{i+1})
+    #   dt_interface = (Δx/6) / max_k
     k_val = typemin(T)
-    cell_min_dt = 0
-    rho_c_min = zero(T)
-    rho_r_min = zero(T)
-    rho_half_min = zero(T)
-    vel_c_min = zero(T)
-    phi_diff_min = zero(T)
 
     @inbounds for I in eachcell(mesh)
         cell = cell_index(I, semi)
 
         # Center state
         u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
-        rho_c = u_cc[1]
-        vel_c = u_cc[2] / rho_c
+        rho_i = u_cc[1]
+        vel_i = u_cc[2] / rho_i
 
         # Potential at center
-        phi_c = _elliptic_var(cache.phi, I, semi, zero(T))
+        phi_i = _elliptic_var(cache.phi, I, semi, zero(T))
 
         # Right neighbor
         Ip1 = neighbor_index(I, semi, 1, 1)
         u_rr = _hyperbolic_state(cache.u, Ip1, semi, zero(T))
         rho_r = u_rr[1]
+        vel_r = u_rr[2] / rho_r
 
         # Potential at right neighbor
         phi_r = _elliptic_var(cache.phi, Ip1, semi, zero(T))
 
         # Density check
-        if rho_c < 1e-6 || rho_r < 1e-6
+        if rho_i < 1e-9 || rho_r < 1e-9
             error("""
                   Density below threshold in compute_dt!
                   time    = $t
                   cell    = $cell
-                  rho_c   = $rho_c
+                  rho_i   = $rho_i
                   rho_r   = $rho_r
                   eta     = $eta
-                  min_rho = $(min(rho_c, rho_r))
                   """)
         end
 
-        # Gamma-mean at right interface
-        rho_half = gamma_mean(rho_c, rho_r, gamma)
+        # Gamma-mean at right interface: ρ̄_{i+1/2}
+        rho_half = gamma_mean(rho_i, rho_r, gamma)
 
-        # Numerator: (Δx/5) * min(ρ_i, ρ_{i+1}) / ρ̄_{i+1/2}
-        min_rho = min(rho_c, rho_r)
-        # min_rho_safe = max(min_rho, 1e-4)
+        # Interface velocity: u_{i+1/2} = (u_i + u_{i+1}) / 2
+        u_half = 0.5 * (vel_i + vel_r)
 
-        # Denominator: |u_i| + sqrt(η * |φ_{i+1} - φ_i| / ρ̄_{i+1/2})
-        phi_diff = abs(phi_r - phi_c)
-        sqrt_term = sqrt(eta * phi_diff) / rho_half
-        part2 = abs(vel_c) + sqrt_term
-        _rhs = min_rho / rho_half
-        _rhs = min(1, _rhs)
-        k = part2 / _rhs
+        # Potential difference: |φ_{i+1} - φ_i|
+        phi_diff = abs(phi_r - phi_i)
 
-        if k > k_val
-            k_val = k
-            cell_min_dt = cell
-            rho_c_min = rho_c
-            rho_r_min = rho_r
-            rho_half_min = rho_half
-            vel_c_min = vel_c
-            phi_diff_min = phi_diff
+        # Rate k = |ρ̄ u + |φ_diff|| / min(ρ)
+        denominator = abs(rho_half * u_half + phi_diff)
+        min_rho = min(rho_i, rho_r)
+
+        if denominator > eps(T) && min_rho > eps(T)
+            k = denominator / min_rho
+            if k > k_val
+                k_val = k
+            end
         end
     end
-    # println("dt diagnostics: cell=$cell_min_dt rho_c=$rho_c_min rho_r=$rho_r_min rho_half=$rho_half_min vel_c=$vel_c_min phi_diff=$phi_diff_min k_val=$k_val")
-    dt_val = (dx / 5) * k_val^(-1)
-    # dt_val = max(1e-6, dt_val)
-    if dt_val < 1e-6
+
+    # dt from condition 2: Δt < (Δx/6) / max_k
+    dt_interface = (dx / 6) / k_val
+
+    # Final dt is the minimum of both conditions
+    dt_val = min(dt_eta, dt_interface)
+
+    if dt_val < 1e-10
         error("""
               dt below threshold in compute_dt!
-              time      = $t
-              dt        = $dt_val
-              eta       = $eta
-              cell      = $cell_min_dt
-              rho_c     = $rho_c_min
-              rho_r     = $rho_r_min
-              rho_half  = $rho_half_min
-              vel_c     = $vel_c_min
-              phi_diff  = $phi_diff_min
+              time        = $t
+              dt          = $dt_val
+              eta         = $eta
+              dt_eta      = $dt_eta
+              dt_interface = $dt_interface
+              k_val       = $k_val
               """)
     end
     return dt_val
