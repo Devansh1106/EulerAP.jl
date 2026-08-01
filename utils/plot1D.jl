@@ -6,9 +6,9 @@ Read one or more 1D HDF5 solution files (new format with top-level `eps`
 and `ncells` scalars) and plot density, velocity, and electric potential
 profiles on the same figure.
 
-The first file is treated as the **initial condition** (plotted with a dashed
+The first file is treated as the **initial condition** (plotted with a solid
 black line).  Subsequent files are **final solutions** and are distinguished
-by line style/colour.
+by marker type and colour.
 
 Legend logic:
   - Identify which parameters vary across the *final* files.
@@ -37,8 +37,9 @@ Examples:
 # using HDF5
 # using Plots
 
-# Line styles / colors to cycle through
-const LINE_STYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
+# Marker types / colors to cycle through
+const MARKER_TYPES = [:star5, :circle, :diamond, :square, :x, :cross,
+                      :hexagon, :pentagon, :dtriangle, :utriangle]
 const LINE_COLORS = [:black, :red, :blue, :green, :orange, :purple, :brown,
                      :pink, :olive, :cyan, :magenta, :navy]
 
@@ -223,11 +224,12 @@ function main()
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
+        mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
         lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
         plot!(p1, f["x"], f["rho"],
-              lw = 2, ls = ls, color = lc,
-              label = legend_labels[i])
+              lw = 1, color = lc,
+              marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
+              markersize = 6, label = legend_labels[i])
     end
 
     # ------------------------------------------------------------------
@@ -242,11 +244,12 @@ function main()
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
+        mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
         lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
         plot!(p2, f["x"], f["ux"],
-              lw = 2, ls = ls, color = lc,
-              label = legend_labels[i])
+              lw = 1, color = lc,
+              marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
+              markersize = 6, label = legend_labels[i])
     end
 
     # ------------------------------------------------------------------
@@ -261,11 +264,12 @@ function main()
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
+        mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
         lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
         plot!(p_mom, f["x"], f["mx"],
-              lw = 2, ls = ls, color = lc,
-              label = legend_labels[i])
+              lw = 1, color = lc,
+              marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
+              markersize = 6, label = legend_labels[i])
     end
 
     # ------------------------------------------------------------------
@@ -285,11 +289,12 @@ function main()
         # Final states from remaining files
         for (i, f) in enumerate(final_files)
             if haskey(f, "phi")
-                ls = LINE_STYLES[(i) % length(LINE_STYLES) + 1]
+                mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
                 lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
                 plot!(p3, f["x"], f["phi"],
-                      lw = 2, ls = ls, color = lc,
-                      label = legend_labels[i])
+                      lw = 1, color = lc,
+                      marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
+                      markersize = 6, label = legend_labels[i])
             end
         end
 
