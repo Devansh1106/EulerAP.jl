@@ -1,6 +1,49 @@
 using EulerAP
 
 # --------------------------------------------------
+# Temporary: per-timestep minimum density output
+# --------------------------------------------------
+# This is a temporary setup local to this script (no library changes).
+# It writes the minimum density at every time step to a file whose name
+# embeds the lambda of the run, e.g. min_rho_seven_branch_1.0.txt.
+
+# mutable struct MinRhoCallback <: EulerAP.AbstractCallback
+#     filename::String
+#     io::Union{Nothing, IOStream}
+# end
+
+# MinRhoCallback(filename::String) = MinRhoCallback(filename, nothing)
+
+# function EulerAP.initialize!(callback::MinRhoCallback,
+#                              context::EulerAP.CallbackContext)
+#     callback.io = open(callback.filename, "w")
+#     println(callback.io, "t  dt  min_rho")
+#     return nothing
+# end
+
+# function EulerAP.perform!(callback::MinRhoCallback,
+#                           context::EulerAP.CallbackContext;
+#                           force = false)
+#     if callback.io === nothing
+#         callback.io = open(callback.filename, "w")
+#         println(callback.io, "t  dt  min_rho")
+#     end
+#     stats = context.stats
+#     println(callback.io, stats.time, "  ", stats.dt, "  ", stats.minimum_density)
+#     flush(callback.io)
+#     return nothing
+# end
+
+# function EulerAP.finalize!(callback::MinRhoCallback,
+#                            context::EulerAP.CallbackContext)
+#     if callback.io !== nothing
+#         close(callback.io)
+#         callback.io = nothing
+#     end
+#     return nothing
+# end
+
+# --------------------------------------------------
 # Mesh
 # --------------------------------------------------
 
@@ -84,7 +127,8 @@ callbacks = CallbackSet(
     AliveCallback(interval=4),
     PerformanceCallback(),
     SummaryCallback(),
-    AnalysisCallback(interval=4)
+    AnalysisCallback(interval=4),
+    # MinRhoCallback("min_rho_seven_branch_$(lambda).txt")
 )
 
 # --------------------------------------------------

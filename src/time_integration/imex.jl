@@ -284,6 +284,7 @@ end
     mesh      = semi.mesh
     gamma     = equations.gamma
     eta       = cache.eta
+    lambda    = semi.equations_elliptic.lambda
 
     T = eltype(mesh.dx)
     dx = mesh.dx[1]
@@ -292,7 +293,7 @@ end
     dt_eta = dx / eta
 
     # Condition 2: find max rate k over all interfaces
-    #   k = |ρ̄_{i+1/2} u_{i+1/2} + |φ_{i+1} - φ_i|| / min(ρ_i, ρ_{i+1})
+    #   k = |ρ̄_{i+1/2} u_{i+1/2} + |φ_{i+1}^{n+1} - φ_i^{n+1}|| / min(ρ_i, ρ_{i+1})
     #   dt_interface = (Δx/6) / max_k
     k_val = typemin(T)
 
@@ -328,32 +329,40 @@ end
                   """)
         end
 
-        # Gamma-mean at right interface: ρ̄_{i+1/2}
-        rho_half = gamma_mean(rho_i, rho_r, gamma)
+        # # Gamma-mean at right interface: ρ̄_{i+1/2}
+        # rho_half = gamma_mean(rho_i, rho_r, gamma)
 
-        # Interface velocity: u_{i+1/2} = (u_i + u_{i+1}) / 2
-        u_half = 0.5 * (vel_i + vel_r)
+        # # Interface velocity: u_{i+1/2} = (u_i + u_{i+1}) / 2
+        # u_half = 0.5 * (vel_i + vel_r)
 
-        # Potential difference: |φ_{i+1} - φ_i|
-        phi_diff = abs(phi_r - phi_i)
+        # # Potential difference: |φ_{i+1} - φ_i|
+        # phi_diff = abs(phi_r - phi_i)
 
         # Rate k = |ρ̄ u + |φ_diff|| / min(ρ)
-        denominator = abs(rho_half * u_half + phi_diff)
-        min_rho = min(rho_i, rho_r)
+        # denominator = abs(rho_half * u_half + phi_diff)
+        # min_rho = min(rho_i, rho_r)
 
-        if denominator > eps(T) && min_rho > eps(T)
-            k = denominator / min_rho
-            if k > k_val
-                k_val = k
-            end
+        y = (2*lambda^2)/(dx^2)
+        second_term = 1/(exp(phi_i) + y)
+        k = abs(vel_i) + second_term
+
+        # if denominator > eps(T) && min_rho > eps(T)
+        #     k = denominator / min_rho
+        #     if k > k_val
+        #         k_val = k
+        #     end
+        # end
+        if k > k_val
+            k_val = k
         end
     end
 
     # dt from condition 2: Δt < (Δx/6) / max_k
-    dt_interface = (dx / 6) / k_val
+    # dt_interface = (dx / 6) / k_val
 
     # Final dt is the minimum of both conditions
-    dt_val = min(dt_eta, dt_interface)
+    # dt_val = min(dt_eta, dt_interface)
+    dt_val = dx/k_val * 0.75
 
     if dt_val < 1e-10
         error("""
@@ -649,7 +658,7 @@ function solve_imex(semi::AbstractSemidiscretization,
 
     @timeit stats.timer "total_runtime" begin
 
-        while t < last(tspan) - eps(t)
+        while t < last(tspan) #- eps(t)
             # println("Time: $t")
             # Compute CFL-limited timestep from current state
             cfl_dt = compute_dt!(cache, semi, t)
