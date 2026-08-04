@@ -43,8 +43,11 @@ function neighbor_index(I::CartesianIndex{1},
         # Ghost state depends on interior state
         return CartesianIndex(clamp(shifted, 1, nx))
 
-    elseif bc isa DirichletBC
-        # Ghost state independent of interior state
+    elseif bc isa DirichletBC || bc isa MixedBC
+        # Ghost state independent of interior state (or, for `MixedBC`,
+        # a per-variable mix that must be resolved by `apply_bc` rather
+        # than by pre-clamping the neighbor index here — see the note in
+        # the `MixedBC` docstring).
         return CartesianIndex(shifted)
 
     else
@@ -258,5 +261,19 @@ end
     return interior + dx * grad
 end
 
+@inline function apply_bc(bc::MixedBC{1, N},
+                          u,
+                          I::CartesianIndex{1},
+                          semi,
+                          t) where {N}
+
+    # Evaluate each variable's own sub-BC independently and keep only the
+    # component that variable is responsible for. Each sub-BC's `apply_bc`
+    # method already knows how to compute its full ghost state (e.g.
+    # `ExtrapolateBC` clamps to the nearest interior cell, `DirichletBC`
+    # evaluates its boundary function), so this reuses the existing
+    # per-condition numerics rather than reimplementing them.
+    return SVector{N}(ntuple(v -> apply_bc(bc.bcs[v], u, I, semi, t)[v], N))
+end
 
 end # @muladd

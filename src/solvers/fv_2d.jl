@@ -44,8 +44,10 @@ function neighbor_index(I::CartesianIndex{2},
         clamped = clamp(shifted, 1, nx)
         return _shifted_cartesian(I, axis, clamped)
 
-    elseif bc isa DirichletBC
-        # Ghost cell outside domain; boundary_side will identify it
+    elseif bc isa DirichletBC || bc isa MixedBC
+        # Ghost cell outside domain; boundary_side will identify it.
+        # For `MixedBC` the per-variable resolution happens in `apply_bc`
+        # rather than here — see the note in the `MixedBC` docstring.
         return _shifted_cartesian(I, axis, shifted)
 
     else
@@ -275,6 +277,18 @@ end
     d = I[1] < 1 || I[1] > nx ? dx : dy
 
     return interior + d * grad
+end
+
+@inline function apply_bc(bc::MixedBC{2, N},
+                          u,
+                          I::CartesianIndex{2},
+                          semi,
+                          t) where {N}
+
+    # See the 1D `MixedBC` `apply_bc` method for the rationale: each
+    # variable's own sub-BC is evaluated independently and only its
+    # component of the resulting ghost state is kept.
+    return SVector{N}(ntuple(v -> apply_bc(bc.bcs[v], u, I, semi, t)[v], N))
 end
 
 

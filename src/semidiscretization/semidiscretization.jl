@@ -220,8 +220,59 @@ struct DirichletBC{NDIMS, F} <: AbstractBC{NDIMS}
     boundary_value::F
 end
 
+# Convenience constructor: DirichletBC{1}(f) => DirichletBC{1, typeof(f)}(f)
+function DirichletBC{NDIMS}(boundary_value::F) where {NDIMS, F}
+    return DirichletBC{NDIMS, F}(boundary_value)
+end
+
 struct NeumannBC{NDIMS, F} <: AbstractBC{NDIMS}
     boundary_gradient::F
+end
+
+# Convenience constructor: NeumannBC{1}(f) => NeumannBC{1, typeof(f)}(f)
+function NeumannBC{NDIMS}(boundary_gradient::F) where {NDIMS, F}
+    return NeumannBC{NDIMS, F}(boundary_gradient)
+end
+
+"""
+    MixedBC{NDIMS}(bcs...)
+
+Composite boundary condition that applies a **different** [`AbstractBC`](@ref)
+to each solution variable on the same side, e.g.
+
+```julia
+MixedBC{1}(ExtrapolateBC{1}(), DirichletBC{1}((x, t, equations) -> 0.0))
+```
+
+applies `ExtrapolateBC` to variable 1 (e.g. density) and a zero Dirichlet
+condition to variable 2 (e.g. momentum) on that side.
+
+`bcs` must contain exactly `nvariables(equations)` entries, in the same order
+as the state vector `u`. Each entry can be any existing `AbstractBC{NDIMS}`,
+and the ghost value for variable `v` is computed by dispatching to that
+entry's own `apply_bc` method and keeping only component `v` — so the
+numerics for each sub-condition are identical to using that condition on its
+own.
+
+!!! note
+    The Jacobian sparsity pattern built in `build_jacobian_cache!` currently
+    makes a single dependent-on-interior-cell / independent-of-interior-cell
+    decision per side (see `neighbor_index`), not per variable. A `MixedBC`
+    is routed through the "independent" branch so that `apply_bc` is always
+    consulted; this is correct for the residual (`rhs!`) evaluation, but if a
+    variable inside a `MixedBC` uses `ExtrapolateBC`/`NeumannBC` (which *do*
+    depend on the neighboring interior cell) and you later build an implicit
+    Jacobian (`jac_prototype = true`) for a system using `MixedBC`, that
+    dependency edge will be missing from the sparsity pattern. This is not
+    exercised by the current explicit/IMEX examples, but should be revisited
+    before using `MixedBC` with an implicit hyperbolic solve.
+"""
+struct MixedBC{NDIMS, N, T <: Tuple} <: AbstractBC{NDIMS}
+    bcs::T
+end
+
+function MixedBC{NDIMS}(bcs::Vararg{AbstractBC{NDIMS}, N}) where {NDIMS, N}
+    return MixedBC{NDIMS, N, typeof(bcs)}(bcs)
 end
 
 struct BoundaryConditions1D
@@ -374,9 +425,12 @@ function build_jacobian_cache!(semi::AbstractSemidiscretization)
                     continue
                 end
                 neighbor_cell = cell_index(neighbor, mesh)
-
                 # Skip ghost cells outside domain (e.g. DirichletBC ghost cells at index 0 or nx+1).
                 # Their state does not depend on interior DOFs, so they contribute zero to the Jacobian.
+                # NOTE: `MixedBC` is also routed here (see its docstring) even when one of its
+                # per-variable sub-conditions is an `ExtrapolateBC`/`NeumannBC` that *does* depend
+                # on the interior neighbor; that dependency edge is currently dropped from the
+                # sparsity pattern in that case.
                 if neighbor_cell < 1 || neighbor_cell > ncells
                     continue
                 end

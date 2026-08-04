@@ -117,6 +117,7 @@ export PeriodicBC
 export DirichletBC
 export NeumannBC
 export ExtrapolateBC
+export MixedBC
 
 # Semidiscretizations
 export SemidiscretizationHyperbolicElliptic
