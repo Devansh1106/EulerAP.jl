@@ -45,7 +45,7 @@ Returns the full hyperbolic state vector (ρ, ρu). Initial value for ϕ
 is calculated in the [`initial_condition`](@ref) in [`semidiscretization_hyperbolic_elliptic`](@ref). 
 """
 @inline function initial_condition_riemann_epb(x, t, equations::EulerPressureLess1D)
-    nr = 0.5s
+    nr = 0.5
     if x[1] < 0.0
         rho = 1.0
     else
