@@ -342,8 +342,9 @@ end
         # denominator = abs(rho_half * u_half + phi_diff)
         # min_rho = min(rho_i, rho_r)
 
-        y = (2*lambda^2)/(dx^2)
-        second_term = 1/(exp(phi_i) + y)
+        y = (lambda^2) * (π^2)/(dx^2)
+        denom = rho_i + y
+        second_term = sqrt(rho_i/denom)
         k = abs(vel_i) + second_term
 
         # if denominator > eps(T) && min_rho > eps(T)
