@@ -1,60 +1,18 @@
 using EulerAP
 
 # --------------------------------------------------
-# Temporary: per-timestep minimum density output
-# --------------------------------------------------
-# This is a temporary setup local to this script (no library changes).
-# It writes the minimum density at every time step to a file whose name
-# embeds the lambda of the run, e.g. min_rho_riemann_0.01.txt.
-
-mutable struct MinRhoCallback <: EulerAP.AbstractCallback
-    filename::String
-    io::Union{Nothing, IOStream}
-end
-
-MinRhoCallback(filename::String) = MinRhoCallback(filename, nothing)
-
-function EulerAP.initialize!(callback::MinRhoCallback,
-                             context::EulerAP.CallbackContext)
-    callback.io = open(callback.filename, "w")
-    println(callback.io, "t  dt  min_rho")
-    return nothing
-end
-
-function EulerAP.perform!(callback::MinRhoCallback,
-                          context::EulerAP.CallbackContext;
-                          force = false)
-    if callback.io === nothing
-        callback.io = open(callback.filename, "w")
-        println(callback.io, "t  dt  min_rho")
-    end
-    stats = context.stats
-    println(callback.io, stats.time, "  ", stats.dt, "  ", stats.minimum_density)
-    flush(callback.io)
-    return nothing
-end
-
-function EulerAP.finalize!(callback::MinRhoCallback,
-                           context::EulerAP.CallbackContext)
-    if callback.io !== nothing
-        close(callback.io)
-        callback.io = nothing
-    end
-    return nothing
-end
-
-# --------------------------------------------------
 # Mesh
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (100,),
-    (-0.2,),
-    (0.2,)
-    # periodicity = (true,)
+    (9000,),
+    (-80.0,),
+    (100.0,)
+    # periodicity = (true,) # For hyperbolic part only
 )
-lambda = 1e-2
-tspan = (0.0, 0.2)
+lambda = 1e-4
+tspan = (0.0, 50.0)
+# tspan = (0.0, 0.2)
 
 # --------------------------------------------------
 # Equations
@@ -75,7 +33,7 @@ equations_elliptic = PoissonBoltzmann(
 # --------------------------------------------------
 
 solver = FVSolver(
-    flux = FluxEnergyStable(0.0),
+    flux = FluxEnergyStable(0.0), # 0.0 is dummy; it will be overwritten inside by calculating η at every time step
     ndims = 1
 )
 
@@ -84,17 +42,17 @@ solver = FVSolver(
 # --------------------------------------------------
 
 boundary_conditions = (
-    # hyperbolic case 1D
+    BoundaryConditions1D(
+        MixedBC{1}(ExtrapolateBC{1}(), DirichletBC{1}((x, t, eq) -> (0.0, 0.0))),  # left side 
+        MixedBC{1}(ExtrapolateBC{1}(), DirichletBC{1}((x, t, eq) -> (0.0, 0.0)))   # right side
+    ),
+    # elliptic case 1D (periodic)
     BoundaryConditions1D(
         ExtrapolateBC{1}(),
         ExtrapolateBC{1}()
-    ),
-    # elliptic case 1D
-    BoundaryConditions1D(
-        PeriodicBC{1}(),
-        PeriodicBC{1}()
     )
 )
+
 
 # --------------------------------------------------
 # Semidiscretization
@@ -103,7 +61,7 @@ boundary_conditions = (
 semi = SemidiscretizationHyperbolicElliptic(
     mesh,
     (equations_hyperbolic, equations_elliptic),
-    initial_condition_shock_tube,
+    initial_condition_riemann_epb,
     solver; # solver_elliptic is default to NewtonRaphson() from NLS
     source_terms = source_terms_hyperbolic,
     source_terms_elliptic = nothing, # elliptic source term is internally constructed for this system
@@ -124,11 +82,10 @@ integrator = IMEXIntegrator(
 # --------------------------------------------------
 
 callbacks = CallbackSet(
-    AliveCallback(interval=1),
+    AliveCallback(interval=4),
     PerformanceCallback(),
     SummaryCallback(),
-    AnalysisCallback(interval=2),
-    MinRhoCallback("min_rho_riemann_$(lambda).txt")
+    AnalysisCallback(interval=4)
 )
 
 # --------------------------------------------------
@@ -140,10 +97,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_riemann_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_shock_tube_$(mesh_str)_initial.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_riemann_$(mesh_str)_$(lambda).h5"
+    "euler_poisson_boltzmann_1d_shock_tube_$(mesh_str)_$(lambda).h5"
 
 # --------------------------------------------------
 # Save initial condition
@@ -159,12 +116,10 @@ save_initial_condition(
 # Solve
 # --------------------------------------------------
 
-sol = solve(
-    semi,
-    tspan,
-    integrator;
-    callbacks = callbacks
-)
+sol = solve(semi,
+            tspan,
+            integrator;
+            callbacks = callbacks)
 
 # --------------------------------------------------
 # Save final solution
