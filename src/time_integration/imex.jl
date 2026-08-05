@@ -342,11 +342,15 @@ end
         # denominator = abs(rho_half * u_half + phi_diff)
         # min_rho = min(rho_i, rho_r)
 
-        y = (lambda^2) * (π^2)/(dx^2)
-        denom = rho_i + y
-        second_term = sqrt(rho_i/denom)
-        k = abs(vel_i) + second_term
+        # y = (lambda^2) * (π^2)/(dx^2)
+        # denom = rho_i + y
+        # second_term = sqrt(rho_i/denom)
+        # k = abs(vel_i) + second_term
 
+        y = 4*lambda^2 / (dx^2)
+        denom = exp(phi_i) + y
+        second_term = sqrt(rho_i / denom)
+        k = abs(vel_i) + second_term
         # if denominator > eps(T) && min_rho > eps(T)
         #     k = denominator / min_rho
         #     if k > k_val
@@ -363,7 +367,7 @@ end
 
     # Final dt is the minimum of both conditions
     # dt_val = min(dt_eta, dt_interface)
-    dt_val = dx/k_val * 0.75
+    dt_val = dx/k_val * 0.50
 
     if dt_val < 1e-10
         error("""
@@ -664,6 +668,7 @@ function solve_imex(semi::AbstractSemidiscretization,
             # Compute CFL-limited timestep from current state
             cfl_dt = compute_dt!(cache, semi, t)
             # actual_dt = min(dt, cfl_dt, last(tspan) - t)
+            # actual_dt = min(dt, last(tspan) - t)
             actual_dt = min(cfl_dt, last(tspan) - t)
 
             stats.mass_before = total_mass(cache.u, semi)
