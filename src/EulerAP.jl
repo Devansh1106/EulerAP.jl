@@ -154,6 +154,7 @@ export initial_condition_riemann_epb
 export initial_condition_five_branch
 export initial_condition_shock_tube
 export initial_condition_seven_branch
+export initial_condition_plasma_expansion
 export make_initial_condition_soliton
 
 # Source terms

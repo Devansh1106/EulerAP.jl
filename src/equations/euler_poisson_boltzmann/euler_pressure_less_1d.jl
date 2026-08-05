@@ -87,4 +87,11 @@ end
     return SVector{2}(rho, rho*u)
 end
 
+@inline function initial_condition_plasma_expansion(x, t, equations::EulerPressureLess1D)
+    RealT = eltype(x)
+    rho = 0.5 - (one(RealT) / π) * atan(π * x[1])
+    return SVector{2}(rho, zero(rho))
+end
+
+
 end # @muladd
