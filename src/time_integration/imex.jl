@@ -142,7 +142,7 @@ end
 # ============================================================================
 # Compute the coefficient η as the maximum over all interfaces of
 #
-#     η = max_i  1.25 * (ρ̄_{i+1/2})² / ρ_i
+#     η = max_i  1.5 * ρ̄_{i+1/2} / ρ_i
 #
 # where ρ̄_{i+1/2} = gamma_mean(ρ_i, ρ_{i+1}, γ).
 # ============================================================================
@@ -168,13 +168,8 @@ end
         # Gamma-mean at right interface
         rho_half = gamma_mean(rho_c, rho_r, gamma)
 
-        # Local contribution: 1.25 * (ρ̄)² / ρ_i
-        # avg = (rho_c + rho_r)/2
         if rho_c > zero(T)
-            # for now using w/o max TODO
-            # eta_val = 0.05
             eta_val = max(eta_val, 1.5 * rho_half / rho_c)
-            # eta_val = 1.25 * rho_half^2 / rho_c
         else
             error("Density is negative: rho_i = $rho_c")
         end
@@ -184,119 +179,45 @@ end
     return nothing
 end
 
-# @inline function compute_dt!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
-#     equations = semi.equations
-#     mesh      = semi.mesh
-#     gamma     = equations.gamma
-#     eta       = cache.eta
-
-#     T = eltype(mesh.dx)
-#     dx = mesh.dx[1]
-#     time = t
-
-#     k_val = typemin(T)
-#     cell_min_dt = 0
-#     rho_c_min = zero(T)
-#     rho_r_min = zero(T)
-#     rho_half_min = zero(T)
-#     vel_c_min = zero(T)
-#     phi_diff_min = zero(T)
-
-#     @inbounds for I in eachcell(mesh)
-#         cell = cell_index(I, semi)
-
-#         # Center state
-#         u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
-#         rho_c = u_cc[1]
-#         vel_c = u_cc[2] / rho_c
-
-#         # Potential at center
-#         phi_c = _elliptic_var(cache.phi, I, semi, zero(T))
-
-#         # Right neighbor
-#         Ip1 = neighbor_index(I, semi, 1, 1)
-#         u_rr = _hyperbolic_state(cache.u, Ip1, semi, zero(T))
-#         rho_r = u_rr[1]
-
-#         # Potential at right neighbor
-#         phi_r = _elliptic_var(cache.phi, Ip1, semi, zero(T))
-
-#         # Density check
-#         if rho_c < 1e-6 || rho_r < 1e-6
-#             error("""
-#                   Density below threshold in compute_dt!
-#                   time    = $t
-#                   cell    = $cell
-#                   rho_c   = $rho_c
-#                   rho_r   = $rho_r
-#                   eta     = $eta
-#                   min_rho = $(min(rho_c, rho_r))
-#                   """)
-#         end
-
-#         # Gamma-mean at right interface
-#         rho_half = gamma_mean(rho_c, rho_r, gamma)
-
-#         # Numerator: (Δx/5) * min(ρ_i, ρ_{i+1}) / ρ̄_{i+1/2}
-#         min_rho = min(rho_c, rho_r)
-#         # min_rho_safe = max(min_rho, 1e-4)
-
-#         # Denominator: |u_i| + sqrt(η * |φ_{i+1} - φ_i| / ρ̄_{i+1/2})
-#         phi_diff = abs(phi_r - phi_c)
-#         sqrt_term = sqrt(eta * phi_diff) / rho_half
-#         part2 = abs(vel_c) + sqrt_term
-#         _rhs = min_rho / rho_half
-#         _rhs = min(1, _rhs)
-#         k = part2 / _rhs
-
-#         if k > k_val
-#             k_val = k
-#             cell_min_dt = cell
-#             rho_c_min = rho_c
-#             rho_r_min = rho_r
-#             rho_half_min = rho_half
-#             vel_c_min = vel_c
-#             phi_diff_min = phi_diff
-#         end
-#     end
-#     # println("dt diagnostics: cell=$cell_min_dt rho_c=$rho_c_min rho_r=$rho_r_min rho_half=$rho_half_min vel_c=$vel_c_min phi_diff=$phi_diff_min k_val=$k_val")
-#     dt_val = (dx / 5) * k_val^(-1)
-#     # dt_val = max(1e-6, dt_val)
-#     if dt_val < 1e-6
-#         error("""
-#               dt below threshold in compute_dt!
-#               time      = $t
-#               dt        = $dt_val
-#               eta       = $eta
-#               cell      = $cell_min_dt
-#               rho_c     = $rho_c_min
-#               rho_r     = $rho_r_min
-#               rho_half  = $rho_half_min
-#               vel_c     = $vel_c_min
-#               phi_diff  = $phi_diff_min
-#               """)
-#     end
-#     return dt_val
-# end
-
-@inline function compute_dt!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
-    equations = semi.equations
+@inline function compute_dt_1!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
     mesh      = semi.mesh
-    gamma     = equations.gamma
-    eta       = cache.eta
     lambda    = semi.equations_elliptic.lambda
+    T = eltype(mesh.dx)
+    dx = mesh.dx[1]
+
+    k_val = typemin(T)
+
+    @inbounds for I in eachcell(mesh)
+
+        # Center state
+        u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
+        rho_c = u_cc[1]
+        vel_c = u_cc[2] / rho_c
+
+        # Potential at center
+        phi_c = _elliptic_var(cache.phi, I, semi, zero(T))
+
+        y = 4*lambda^2 / (dx^2)
+        denom = exp(phi_c) + y
+        second_term = sqrt(rho_c / denom)
+        k = abs(vel_c) + second_term
+
+        if k > k_val
+            k_val = k
+        end
+    end
+    dt_val = 0.75 * dx / k_val
+    return dt_val
+end
+
+@inline function compute_dt_2!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
+    mesh      = semi.mesh
+    eta       = cache.eta
 
     T = eltype(mesh.dx)
     dx = mesh.dx[1]
 
-    # Condition 1: η Δt/Δx < 1  ⇒  Δt < Δx / η
-    dt_eta = dx / eta
-
-    # Condition 2: find max rate k over all interfaces
-    #   k = |ρ̄_{i+1/2} u_{i+1/2} + |φ_{i+1}^{n+1} - φ_i^{n+1}|| / min(ρ_i, ρ_{i+1})
-    #   dt_interface = (Δx/6) / max_k
     k_val = typemin(T)
-    rhs_val = typemin(T)
 
     @inbounds for I in eachcell(mesh)
         cell = cell_index(I, semi)
@@ -330,60 +251,15 @@ end
                   """)
         end
 
-        # # Gamma-mean at right interface: ρ̄_{i+1/2}
-        # rho_half = gamma_mean(rho_i, rho_r, gamma)
-
-        # # Interface velocity: u_{i+1/2} = (u_i + u_{i+1}) / 2
-        # u_half = 0.5 * (vel_i + vel_r)
-
-        # # Potential difference: |φ_{i+1} - φ_i|
-        # phi_diff = abs(phi_r - phi_i)
-
-        # Rate k = |ρ̄ u + |φ_diff|| / min(ρ)
-        # denominator = abs(rho_half * u_half + phi_diff)
-        # min_rho = min(rho_i, rho_r)
-
-        # y = (lambda^2) * (π^2)/(dx^2)
-        # denom = rho_i + y
-        # second_term = sqrt(rho_i/denom)
-        # k = abs(vel_i) + second_term
-
-        # y = 4*lambda^2 / (dx^2)
-        # denom = exp(phi_i) + y
-        # second_term = sqrt(rho_i / denom)
-        # k = abs(vel_i) + second_term
-
-        # New condition
         avg = (vel_i + vel_r)/2
         phi_diff = eta * abs(phi_r - phi_i)
         k = abs(avg) + phi_diff
 
-        min_rho = min(rho_i, rho_r)
-        max_rho = max(rho_i, rho_r)
-        _rhs = (min_rho / max_rho) / 6
-        rhs = max(1.0, _rhs)
-        rhs_val = rhs
-        # if denominator > eps(T) && min_rho > eps(T)
-        #     k = denominator / min_rho
-        #     if k > k_val
-        #         k_val = k
-        #     end
-        # end
         if k > k_val
             k_val = k
         end
-        # if rhs > rhs_val
-        #     rhs_val = rhs
-        # end
     end
-
-    # dt from condition 2: Δt < (Δx/6) / max_k
-    # dt_interface = (dx / 6) / k_val
-
-    # Final dt is the minimum of both conditions
-    # dt_val = min(dt_eta, dt_interface)
-    # dt_val = dx/k_val * 0.50
-    dt_val = 0.05 * rhs_val * dx / k_val
+    dt_val = 0.1 * dx / k_val
 
     if dt_val < 1e-12
         error("""
@@ -391,8 +267,6 @@ end
               time        = $t
               dt          = $dt_val
               eta         = $eta
-              dt_eta      = $dt_eta
-              dt_interface = $dt_val
               k_val       = $k_val
               """)
     end
@@ -416,13 +290,9 @@ function perform_stage!(
     t,
 )
 
-    # Compute diffusion coefficient from current density
-    compute_eta!(cache, semi)
-
     λ = semi.equations_elliptic.lambda
 
-    # Hand the current density state, η and dt to the Newton solver via
-    # references (no copies). The assembly functions use these to add the
+    # assembly functions use these to add the
     # per-cell η dt² ρ̄ⁿ_{i±1/2} corrections to the constant-coefficient
     # Laplacian stencil.
     params = semi.cache_elliptic.newton_cache.params
@@ -445,7 +315,7 @@ end
 # Stage 3: Implicit Correction (final ρ, ρu update)
 # ============================================================================
 # F^1_{face} = ρ̄ * (u_r + u_l)/2 - (x_r - x_l) * ηΔt/Δx
-# F^2_{face} = u_l * max(F^1, 0) + u_r * max(-F^1, 0)
+# F^2_{face} = u_l * max(F^1, 0) + u_r * min(F^1, 0)
 # S^2_{face} = -ρ̄ * (x_r - x_l) / Δx
 #
 # Swept independently along each Cartesian direction.
@@ -468,9 +338,6 @@ function perform_stage!(
 
     # Stage starts from uⁿ
     copyto!(cache.u_new, cache.u)
-
-    # TODO: DEBUG: set phi = 1 for all cells
-    # fill!(cache.phi, 1)
 
     # Read/write buffers
     read_state  = cache.u_new
@@ -576,18 +443,6 @@ function perform_stage!(
             write_state[mom_idx] = read_state[mom_idx] - (dt / dx) * (right.flux[2] - left.flux[2])
 
             write_state[mom_idx] += (dt / 2) * (right.source + left.source)
-
-            # if write_state[rho_idx] <= 0
-            #     println("Negative density created")
-            #     println("time = ", t)
-            #     println("cell = ", cell)
-            #     println("rho_old = ", read_state[rho_idx])
-            #     println("F_left  = ", left.flux[1])
-            #     println("F_right = ", right.flux[1])
-            #     println("flux difference = ", right.flux[1] - left.flux[1])
-            #     println("dt/dx = ", dt/dx)
-            # end
-
         end
         # Swap read/write buffers for the next directional sweep
         read_state, write_state = write_state, read_state
@@ -687,12 +542,11 @@ function solve_imex(semi::AbstractSemidiscretization,
 
     @timeit stats.timer "total_runtime" begin
 
-        while t < last(tspan) #- eps(t)
-            # println("Time: $t")
-            # Compute CFL-limited timestep from current state
-            cfl_dt = compute_dt!(cache, semi, t)
-            # actual_dt = min(dt, cfl_dt, last(tspan) - t)
-            # actual_dt = min(dt, last(tspan) - t)
+        while t < last(tspan)
+            # Compute diffusion coefficient from current density state
+            # (must happen BEFORE compute_dt_2!, which uses cache.eta)
+            compute_eta!(cache, semi)
+            cfl_dt = compute_dt_2!(cache, semi, t)
             actual_dt = min(cfl_dt, last(tspan) - t)
 
             stats.mass_before = total_mass(cache.u, semi)
@@ -762,8 +616,6 @@ function solve_imex(semi::AbstractSemidiscretization,
             stats.time = t
             stats.dt = actual_dt
 
-            # u is already in block layout, so cache.u and cache.phi are views into u.
-            # No re-interleave needed — callbacks see the correct state directly.
             context.solution = EulerAPSolution(u, t)
 
             perform_callbacks!(

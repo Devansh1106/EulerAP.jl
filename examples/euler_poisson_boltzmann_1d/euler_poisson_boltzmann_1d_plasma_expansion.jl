@@ -53,7 +53,7 @@ mesh = CartesianMesh(
     (40.0,)
     # periodicity = (true,) # For hyperbolic part only
 )
-lambda = 1e-3
+lambda = 1e-2
 # tspan = (0.0, 0.010)
 tspan = (0.0, 3.0)
 
