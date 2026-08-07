@@ -188,12 +188,8 @@ end
     # --------------------------------------------------
 
 
-    F_rho =
-        rho_half *
-        0.5 *
-        (vel_rr + vel_ll) -
-        eta * dt *
-        (phi_rr - phi_ll) / dx
+    # F_rho = rho_half * 0.5 * (vel_rr + vel_ll) - eta * dt * (phi_rr - phi_ll) / dx
+    F_rho = rho_half * 0.5 * (vel_rr + vel_ll) - eta * dt * rho_half * (phi_rr - phi_ll) / dx
 
     # --------------------------------------------------
     # Upwind splitting

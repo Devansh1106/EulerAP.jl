@@ -140,10 +140,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_riemann_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_shock_tube_$(mesh_str)_initial.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_riemann_$(mesh_str)_$(lambda).h5"
+    "euler_poisson_boltzmann_1d_shock_tube_$(mesh_str)_$(lambda).h5"
 
 # --------------------------------------------------
 # Save initial condition

@@ -181,6 +181,15 @@ function assemble_nonlinear_residual!(
 
     alpha = coeff / dx^2
 
+    # IMEX per-cell correction: η dt² ρ̄ⁿ_{i±1/2} / dx². When `eta_dt2 == 0`
+    # (e.g. the initial-condition solve, which never sets `params.eta`/`dt`),
+    # the assembly reduces to the plain constant-coefficient Laplacian and we
+    # skip the density lookups entirely (avoiding `gamma_mean(0, 0, γ) = NaN`).
+    eta_dt2 = params.eta * params.dt^2
+    rho = params.rho
+    gamma = semi.equations.gamma
+    apply_correction = eta_dt2 != 0
+
     @inbounds for I in eachcell(mesh)
 
         cell = cell_index(I, semi)
@@ -204,8 +213,25 @@ function assemble_nonlinear_residual!(
             t,
         )
 
-        F[cell] = alpha *
-                  (-2 * phi_i + phi_l + phi_r) +
+        if apply_correction
+            rho_i = _hyperbolic_ghost_state(rho, I, semi, t)[1]
+            rho_l = _hyperbolic_ghost_state(rho, Im1, semi, t)[1]
+            rho_r = _hyperbolic_ghost_state(rho, Ip1, semi, t)[1]
+            rh_l = gamma_mean(rho_l, rho_i, gamma)
+            rh_r = gamma_mean(rho_i, rho_r, gamma)
+
+            alpha_im1 = alpha - eta_dt2 * rh_l / dx^2
+            alpha_ip1 = alpha - eta_dt2 * rh_r / dx^2
+            alpha_i   = -2 * alpha + eta_dt2 * (rh_l + rh_r) / dx^2
+        else
+            alpha_im1 = alpha
+            alpha_ip1 = alpha
+            alpha_i   = -2 * alpha
+        end
+
+        F[cell] = alpha_im1 * phi_l +
+                  alpha_i * phi_i +
+                  alpha_ip1 * phi_r +
                   elliptic_point_source(
                       phi_i,
                       equations,
@@ -238,10 +264,20 @@ function assemble_nonlinear_jacobian!(J,
     equations = semi.equations_elliptic
 
     coeff = params.laplacian_coeff
+    t = params.t
 
     dx = mesh.dx[1]
 
     alpha = coeff / dx^2
+
+    # IMEX per-cell correction: η dt² ρ̄ⁿ_{i±1/2} / dx². When `eta_dt2 == 0`
+    # (e.g. the initial-condition solve, which never sets `params.eta`/`dt`),
+    # the assembly reduces to the plain constant-coefficient Laplacian and we
+    # skip the density lookups entirely (avoiding `gamma_mean(0, 0, γ) = NaN`).
+    eta_dt2 = params.eta * params.dt^2
+    rho = params.rho
+    gamma = semi.equations.gamma
+    apply_correction = eta_dt2 != 0
 
     nx = ncells(mesh)
 
@@ -255,23 +291,43 @@ function assemble_nonlinear_jacobian!(J,
     fill!(J.nzval, zero(eltype(J)))
     
     @inbounds for i in 1:nx
-        diag = -2 * alpha + elliptic_point_source_derivative(phi[i], equations)
+        if apply_correction
+            I = CartesianIndex(i)
+            Im1 = CartesianIndex(i - 1)
+            Ip1 = CartesianIndex(i + 1)
+
+            rho_i = _hyperbolic_ghost_state(rho, I, semi, t)[1]
+            rho_l = _hyperbolic_ghost_state(rho, Im1, semi, t)[1]
+            rho_r = _hyperbolic_ghost_state(rho, Ip1, semi, t)[1]
+            rh_l = gamma_mean(rho_l, rho_i, gamma)
+            rh_r = gamma_mean(rho_i, rho_r, gamma)
+
+            alpha_im1 = alpha - eta_dt2 * rh_l / dx^2
+            alpha_ip1 = alpha - eta_dt2 * rh_r / dx^2
+            alpha_i   = -2 * alpha + eta_dt2 * (rh_l + rh_r) / dx^2
+        else
+            alpha_im1 = alpha
+            alpha_ip1 = alpha
+            alpha_i   = -2 * alpha
+        end
+
+        diag = alpha_i + elliptic_point_source_derivative(phi[i], equations)
 
         if i > 1
-            J[i, i - 1] = alpha
+            J[i, i - 1] = alpha_im1
         elseif periodic && nx > 2
-            J[i, nx] = alpha
+            J[i, nx] = alpha_im1
         elseif !(left_bc isa DirichletBC)
             # Neumann/Extrapolate ghost = phi[1] + const  =>  d(ghost)/d(phi[1]) = 1
-            diag += alpha
+            diag += alpha_im1
         end
 
         if i < nx
-            J[i, i + 1] = alpha
+            J[i, i + 1] = alpha_ip1
         elseif periodic && nx > 2
-            J[i, 1] = alpha
+            J[i, 1] = alpha_ip1
         elseif !(right_bc isa DirichletBC)
-            diag += alpha
+            diag += alpha_ip1
         end
 
         J[i, i] = diag

@@ -46,11 +46,22 @@ end
     NewtonParameters
 
 Parameters passed to the Newton solver for the elliptic implicit equation.
+
+The `rho`, `eta` and `dt` fields are used by the IMEX scheme to add the
+per-cell `η dt² ρ̄ⁿ_{i±1/2}` corrections to the constant-coefficient
+Laplacian stencil. They hold references (no copies) to the hyperbolic
+density state and the current timestep/diffusion coefficient; when they
+are left at their initial values (`rho = 0`, `eta = 0`, `dt = 0`) the
+assembly reduces to the plain `laplacian_coeff` Laplacian, which is the
+behavior used by the initial-condition solve.
 """
-mutable struct NewtonParameters{TRhs, TCoeff, TTime}
+mutable struct NewtonParameters{TRhs, TCoeff, TTime, TRho <: AbstractVector, TEta, TDt}
     rhs::TRhs
     laplacian_coeff::TCoeff
     t::TTime
+    rho::TRho
+    eta::TEta
+    dt::TDt
 end
 
 """
@@ -67,8 +78,13 @@ function create_newton_cache(mesh::CartesianMesh)
     nx = ncells(mesh)
     T = eltype(mesh.dx)
 
-    # Create initial parameters struct (will be updated during solve)
-    params = NewtonParameters(zeros(T, nx), zero(T), zero(T))
+    # Create initial parameters struct (will be updated during solve).
+    # `rho` is typed as `AbstractVector{T}` so it can hold a `SubArray`
+    # reference to the IMEX hyperbolic state `cache.u` (a view into the
+    # block-layout state) without copying. Its initial zero value keeps the
+    # initial-condition solve on the plain `laplacian_coeff` Laplacian.
+    params = NewtonParameters{Vector{T}, T, T, AbstractVector{T}, T, T}(
+        zeros(T, nx), zero(T), zero(T), zeros(T, nx), zero(T), zero(T))
 
     # NonlinearProblem is created later in set_newton_semi!
     # once the semidiscretization is available

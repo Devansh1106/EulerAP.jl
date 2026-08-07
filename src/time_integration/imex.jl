@@ -169,11 +169,11 @@ end
         rho_half = gamma_mean(rho_c, rho_r, gamma)
 
         # Local contribution: 1.25 * (ρ̄)² / ρ_i
-        avg = (rho_c + rho_r)/2
+        # avg = (rho_c + rho_r)/2
         if rho_c > zero(T)
             # for now using w/o max TODO
             # eta_val = 0.05
-            eta_val = max(eta_val, 1.25 * (rho_half^2) / avg)
+            eta_val = max(eta_val, 1.5 * rho_half / rho_c)
             # eta_val = 1.25 * rho_half^2 / rho_c
         else
             error("Density is negative: rho_i = $rho_c")
@@ -296,6 +296,7 @@ end
     #   k = |ρ̄_{i+1/2} u_{i+1/2} + |φ_{i+1}^{n+1} - φ_i^{n+1}|| / min(ρ_i, ρ_{i+1})
     #   dt_interface = (Δx/6) / max_k
     k_val = typemin(T)
+    rhs_val = typemin(T)
 
     @inbounds for I in eachcell(mesh)
         cell = cell_index(I, semi)
@@ -318,7 +319,7 @@ end
         phi_r = _elliptic_var(cache.phi, Ip1, semi, zero(T))
 
         # Density check
-        if rho_i < 1e-9 || rho_r < 1e-9
+        if rho_i < 1e-12 || rho_r < 1e-12
             error("""
                   Density below threshold in compute_dt!
                   time    = $t
@@ -347,10 +348,21 @@ end
         # second_term = sqrt(rho_i/denom)
         # k = abs(vel_i) + second_term
 
-        y = 4*lambda^2 / (dx^2)
-        denom = exp(phi_i) + y
-        second_term = sqrt(rho_i / denom)
-        k = abs(vel_i) + second_term
+        # y = 4*lambda^2 / (dx^2)
+        # denom = exp(phi_i) + y
+        # second_term = sqrt(rho_i / denom)
+        # k = abs(vel_i) + second_term
+
+        # New condition
+        avg = (vel_i + vel_r)/2
+        phi_diff = eta * abs(phi_r - phi_i)
+        k = abs(avg) + phi_diff
+
+        min_rho = min(rho_i, rho_r)
+        max_rho = max(rho_i, rho_r)
+        _rhs = (min_rho / max_rho) / 6
+        rhs = max(1.0, _rhs)
+        rhs_val = rhs
         # if denominator > eps(T) && min_rho > eps(T)
         #     k = denominator / min_rho
         #     if k > k_val
@@ -360,6 +372,9 @@ end
         if k > k_val
             k_val = k
         end
+        # if rhs > rhs_val
+        #     rhs_val = rhs
+        # end
     end
 
     # dt from condition 2: Δt < (Δx/6) / max_k
@@ -367,16 +382,17 @@ end
 
     # Final dt is the minimum of both conditions
     # dt_val = min(dt_eta, dt_interface)
-    dt_val = dx/k_val * 0.50
+    # dt_val = dx/k_val * 0.50
+    dt_val = 0.05 * rhs_val * dx / k_val
 
-    if dt_val < 1e-10
+    if dt_val < 1e-12
         error("""
               dt below threshold in compute_dt!
               time        = $t
               dt          = $dt_val
               eta         = $eta
               dt_eta      = $dt_eta
-              dt_interface = $dt_interface
+              dt_interface = $dt_val
               k_val       = $k_val
               """)
     end
@@ -404,12 +420,20 @@ function perform_stage!(
     compute_eta!(cache, semi)
 
     λ = semi.equations_elliptic.lambda
-    η = cache.eta
+
+    # Hand the current density state, η and dt to the Newton solver via
+    # references (no copies). The assembly functions use these to add the
+    # per-cell η dt² ρ̄ⁿ_{i±1/2} corrections to the constant-coefficient
+    # Laplacian stencil.
+    params = semi.cache_elliptic.newton_cache.params
+    params.rho = cache.u
+    params.eta = cache.eta
+    params.dt  = dt
 
     solve_newton!(
         cache.phi,
         cache.rho_hat,
-        -(λ^2 + η * dt^2),
+        -λ^2,
         semi,
         t,
     )
