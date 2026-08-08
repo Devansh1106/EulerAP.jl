@@ -36,9 +36,10 @@ Examples:
 """
 # using HDF5
 # using Plots
+using Printf
 
 # Marker types / colors to cycle through
-const MARKER_TYPES = [:star5, :circle, :diamond, :square, :x, :cross,
+const MARKER_TYPES = [:circle, :diamond, :square, :x, :cross, :plus,
                       :hexagon, :pentagon, :dtriangle, :utriangle]
 const LINE_COLORS = [:black, :red, :blue, :green, :orange, :purple, :brown,
                      :pink, :olive, :cyan, :magenta, :navy]
@@ -161,13 +162,13 @@ function main()
 
         # Decide which parameter goes in the legend (priority: eps > mesh > t)
         if length(eps_unique) > 1
-            legend_labels = ["ε = $(e)" for e in epsilons]
+            legend_labels = ["ε = $(@sprintf("%.6f", e))" for e in epsilons]
             legend_param  = :eps
         elseif length(mesh_unique) > 1
             legend_labels = ["N = $(m)" for m in mesh_strs]
             legend_param  = :mesh
         elseif length(t_unique) > 1
-            legend_labels = ["t = $(t)" for t in ts]
+            legend_labels = ["t = $(@sprintf("%.6f", t))" for t in ts]
             legend_param  = :t
         else
             legend_labels = ["final $(i)" for i in 1:nfinal]
@@ -229,7 +230,8 @@ function main()
         plot!(p1, f["x"], f["rho"],
               lw = 1, color = lc,
               marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-              markersize = 6, label = legend_labels[i])
+              markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
+              label = legend_labels[i])
     end
 
     # ------------------------------------------------------------------
@@ -249,34 +251,38 @@ function main()
         plot!(p2, f["x"], f["ux"],
               lw = 1, color = lc,
               marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-              markersize = 6, label = legend_labels[i])
+              markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
+              label = legend_labels[i])
     end
 
     # ------------------------------------------------------------------
     # Momentum subplot (debug)
     # ------------------------------------------------------------------
-    p_mom = plot(xlabel = "x", ylabel = "mₓ", title = "Momentum")
-
-    # Initial condition from first file (solid black)
-    plot!(p_mom, init["x"], init["mx"],
-          lw = 2, ls = :solid, color = :black,
-          label = "Initial")
-
-    # Final states from remaining files
-    for (i, f) in enumerate(final_files)
-        mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
-        lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
-        plot!(p_mom, f["x"], f["mx"],
-              lw = 1, color = lc,
-              marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-              markersize = 6, label = legend_labels[i])
-    end
+    # p_mom = plot(xlabel = "x", ylabel = "mₓ", title = "Momentum")
+    #
+    # # Initial condition from first file (solid black)
+    # plot!(p_mom, init["x"], init["mx"],
+    #       lw = 2, ls = :solid, color = :black,
+    #       label = "Initial")
+    #
+    # # Final states from remaining files
+    # for (i, f) in enumerate(final_files)
+    #     mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
+    #     lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
+    #     plot!(p_mom, f["x"], f["mx"],
+    #           lw = 1, color = lc,
+    #           marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
+    #           markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
+    #           label = legend_labels[i])
+    # end
 
     # ------------------------------------------------------------------
     # Electric potential subplot (if 3+ variables)
     # ------------------------------------------------------------------
-    nrows = nvars >= 3 ? 4 : 3
-    plots = [p1, p2, p_mom]
+    # nrows = nvars >= 3 ? 4 : 3
+    nrows = nvars >= 3 ? 3 : 2
+    # plots = [p1, p2, p_mom]
+    plots = [p1, p2]
 
     if nvars >= 3
         p3 = plot(xlabel = "x", ylabel = "φ", title = "Electric Potential")
@@ -294,7 +300,8 @@ function main()
                 plot!(p3, f["x"], f["phi"],
                       lw = 1, color = lc,
                       marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-                      markersize = 6, label = legend_labels[i])
+                      markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
+                      label = legend_labels[i])
             end
         end
 

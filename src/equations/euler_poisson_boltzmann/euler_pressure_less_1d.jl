@@ -16,7 +16,7 @@ function EulerPressureLess1D(; gamma)
     return EulerPressureLess1D{typeof(γ)}(γ)
 end
 
-@inline function flux(u::SVector{3}, orientation, 
+@inline function flux(u::SVector{2}, orientation, 
                       equations::EulerPressureLess1D)
 
     rho = u[1]
@@ -24,7 +24,7 @@ end
 
     v = m / rho
 
-    return SVector(m, m*v)
+    return SVector{2}(m, m*v)
 end
 
 # --------------------------------------------------
@@ -34,7 +34,7 @@ end
 @inline function source_terms_hyperbolic(u, equations::EulerPressureLess1D)
     # ρ_t += 0
     # m_t += 0 (no source term for pressure-less Euler)
-    return SVector(zero(u[1]), zero(u[1]))
+    return SVector{2}(zero(u[1]), zero(u[1]))
 end
 
 """
