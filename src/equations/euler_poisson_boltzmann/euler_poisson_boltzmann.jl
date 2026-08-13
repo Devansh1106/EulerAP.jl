@@ -103,7 +103,7 @@ end
 
 """
 Given the phi-profile, build (rho, u_lab) arrays via (5.2) and the
-lab-frame velocity formula u_lab = u0 + u0/n_s(x) (n0 = 1).
+lab-frame velocity formula u_lab = u0 - u0/n_s(x) (n0 = 1).
 """
 function soliton_density_velocity(phis, u0)
     ns = @. (1 + 2*phis/u0^2)^(-0.5)
