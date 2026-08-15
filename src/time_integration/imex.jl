@@ -52,88 +52,64 @@ function perform_stage!(
     mesh      = semi.mesh
 
     gamma = equations.gamma
-
-    NDIMS = ndims(mesh)
     nvars = nvariables(equations)
 
-    for axis in 1:NDIMS
-        dx = mesh.dx[axis]
-        @inbounds for I in eachcell(mesh)
-            cell = cell_index(I, semi)
+    # NOTE: EPB is 1D-only today (see the note on ImplicitPredictionStage
+    # below), so this stage only ever runs for axis = 1 in practice.
+    nx       = size(mesh, 1)
+    dx       = mesh.dx[1]
+    periodic = semi.boundary_conditions.left isa PeriodicBC
 
-            # -----------------------------
-            # Centre state
-            # -----------------------------
-
-            u_cc = _hyperbolic_state(cache.u,
-                                     I,
-                                     semi,
-                                     t)
-
-            rho_c = u_cc[1]
-            vel_c = u_cc[2] / rho_c
-
-            # -----------------------------
-            # Right state
-            # -----------------------------
-
-            Ip1 = neighbor_index(I, semi, axis, 1)
-            u_rr = _hyperbolic_state(cache.u,
-                                     Ip1,
-                                     semi,
-                                     t)
-
-            rho_r = u_rr[1]
-            vel_r = u_rr[2] / rho_r
-
-            # -----------------------------
-            # Left state
-            # -----------------------------
-
-            Im1 = neighbor_index(I, semi, axis, -1)
-
-            u_ll = _hyperbolic_state(cache.u,
-                                     Im1,
-                                     semi,
-                                     t)
-
-            rho_l = u_ll[1]
-            vel_l = u_ll[2] / rho_l
-
-            if rho_c <= 0 || rho_r <= 0 || rho_l <= 0
-                error("""
-                        Negative density entering ExplicitCorrectionStage
-
-                        time = $t
-                        cell = $cell
-
-                        rho_i = $rho_c
-                        rho_r = $rho_r
-                        rho_l = $rho_l
-                        """)
-            end
-
-            flux_rr = explicit_density_flux(rho_c,
-                                            rho_r,
-                                            vel_c,
-                                            vel_r,
-                                            gamma)
-
-            flux_ll = explicit_density_flux(rho_l,
-                                            rho_c,
-                                            vel_l,
-                                            vel_c,
-                                            gamma)
-
-            # -----------------------------
-            # Finite-volume update
-            # -----------------------------
-
-            rho_idx = global_dof(cell, 1, nvars)
-
-            cache.rho_hat[cell] = cache.u[rho_idx] - (dt / dx) * (flux_rr - flux_ll)
-        end
+    # Seed with ρⁿ; interface flux differences are subtracted below — one
+    # `explicit_density_flux` evaluation per interface instead of two.
+    @inbounds for i in 1:nx
+        cache.rho_hat[i] = cache.u[global_dof(i, 1, nvars)]
     end
+
+    rho_vel(I) = begin
+        s = _hyperbolic_state(cache.u, I, semi, t)
+        rho = s[1]
+        if rho <= 0
+            error("""
+                    Negative density entering ExplicitCorrectionStage
+
+                    time = $t
+                    cell = $(cell_index(I, semi))
+
+                    rho = $rho
+                    """)
+        end
+        return rho, s[2] / rho
+    end
+
+    # Interior faces: nx - 1 of them, between cell i and cell i+1
+    @inbounds for i in 1:(nx - 1)
+        rho_l, vel_l = rho_vel(CartesianIndex(i))
+        rho_r, vel_r = rho_vel(CartesianIndex(i + 1))
+        f = explicit_density_flux(rho_l, rho_r, vel_l, vel_r, gamma)
+        cache.rho_hat[i]     -= (dt / dx) * f
+        cache.rho_hat[i + 1] += (dt / dx) * f
+    end
+
+    # Boundary face(s)
+    if periodic
+        rho_l, vel_l = rho_vel(CartesianIndex(nx))
+        rho_r, vel_r = rho_vel(CartesianIndex(1))
+        f = explicit_density_flux(rho_l, rho_r, vel_l, vel_r, gamma)
+        cache.rho_hat[nx] -= (dt / dx) * f
+        cache.rho_hat[1]  += (dt / dx) * f
+    else
+        rho_gl, vel_gl = rho_vel(neighbor_index(CartesianIndex(1), semi, 1, -1))
+        rho_1,  vel_1  = rho_vel(CartesianIndex(1))
+        f_l = explicit_density_flux(rho_gl, rho_1, vel_gl, vel_1, gamma)
+        cache.rho_hat[1] += (dt / dx) * f_l
+
+        rho_nx, vel_nx = rho_vel(CartesianIndex(nx))
+        rho_gr, vel_gr = rho_vel(neighbor_index(CartesianIndex(nx), semi, 1, 1))
+        f_r = explicit_density_flux(rho_nx, rho_gr, vel_nx, vel_gr, gamma)
+        cache.rho_hat[nx] -= (dt / dx) * f_r
+    end
+
     return nothing
 end
 
@@ -333,129 +309,87 @@ function perform_stage!(
     solver    = semi.solver
 
     mesh  = semi.mesh
-    NDIMS = ndims(mesh)
     nvars = nvariables(equations)
 
-    # Stage starts from uⁿ
-    copyto!(cache.u_new, cache.u)
+    # NOTE: EPB is 1D-only today (see the note on ImplicitPredictionStage
+    # above), so this stage only ever runs for axis = 1 in practice.
+    nx       = size(mesh, 1)
+    dx       = mesh.dx[1]
+    eta      = cache.eta
+    periodic = semi.boundary_conditions.left isa PeriodicBC
 
-    # Read/write buffers
-    read_state  = cache.u_new
+    # Stage starts from uⁿ. `cache.u` is only ever READ during the loop
+    # below (never written), so it can be read directly — no need to copy
+    # it into a separate buffer first. `write_state` is where the interface
+    # deltas actually accumulate; it must start as a copy of uⁿ since we
+    # need cell i's ORIGINAL state still available when a later face touches
+    # cell i again (face i-1/i and face i/i+1 both read cell i).
+    read_state  = cache.u
     write_state = cache.u_buffer
+    copyto!(write_state, read_state)
 
-    for axis in 1:NDIMS
-        dx = mesh.dx[axis]
-        @inbounds for I in eachcell(mesh)
+    state_phi(I) = (_hyperbolic_state(read_state, I, semi, t),
+                    _elliptic_var(cache.phi, I, semi, t))
 
-            cell = cell_index(I, semi)
+    # One `solver.flux` evaluation per interface, applied to both neighbors:
+    # `flux` with opposite sign (conservative), `source` with the SAME sign
+    # onto both (nonconservative-like — matches the original
+    # `(dt/2)*(right.source + left.source)` per-cell accumulation, since an
+    # interior cell touches exactly two interfaces).
+    function apply_interface!(cell_l, cell_r, u_l, phi_l, u_r, phi_r)
+        contrib = solver.flux(u_l, u_r, phi_l, phi_r, 1, equations, dt, dx, eta)
 
-            # --------------------------------------------------
-            # Center state
-            # --------------------------------------------------
+        rho_l_idx, mom_l_idx = global_dof(cell_l, 1, nvars), global_dof(cell_l, 2, nvars)
+        rho_r_idx, mom_r_idx = global_dof(cell_r, 1, nvars), global_dof(cell_r, 2, nvars)
 
-            u_cc = _hyperbolic_state(
-                read_state,
-                I,
-                semi,
-                t,
-            )
+        write_state[rho_l_idx] -= (dt / dx) * contrib.flux[1]
+        write_state[rho_r_idx] += (dt / dx) * contrib.flux[1]
+        write_state[mom_l_idx] -= (dt / dx) * contrib.flux[2]
+        write_state[mom_r_idx] += (dt / dx) * contrib.flux[2]
 
-            phi_cc = _elliptic_var(
-                cache.phi,
-                I,
-                semi,
-                t,
-            )
+        write_state[mom_l_idx] += (dt / 2) * contrib.source
+        write_state[mom_r_idx] += (dt / 2) * contrib.source
 
-            # --------------------------------------------------
-            # Right interface
-            # --------------------------------------------------
-
-            Ip1 = neighbor_index(I, semi, axis, 1)
-
-            u_rr = _hyperbolic_state(
-                read_state,
-                Ip1,
-                semi,
-                t,
-            )
-
-            phi_rr = _elliptic_var(
-                cache.phi,
-                Ip1,
-                semi,
-                t,
-            )
-
-            right = solver.flux(
-                u_cc,
-                u_rr,
-                phi_cc,
-                phi_rr,
-                axis,
-                equations,
-                dt,
-                dx,
-                cache.eta,
-            )
-
-            # --------------------------------------------------
-            # Left interface
-            # --------------------------------------------------
-
-            Im1 = neighbor_index(I, semi, axis, -1)
-
-            u_ll = _hyperbolic_state(
-                read_state,
-                Im1,
-                semi,
-                t,
-            )
-
-            phi_ll = _elliptic_var(
-                cache.phi,
-                Im1,
-                semi,
-                t,
-            )
-
-            left = solver.flux(
-                u_ll,
-                u_cc,
-                phi_ll,
-                phi_cc,
-                axis,
-                equations,
-                dt,
-                dx,
-                cache.eta,
-            )
-
-            # --------------------------------------------------
-            # Finite-volume update
-            # --------------------------------------------------
-
-            rho_idx = global_dof(cell, 1, nvars)
-            mom_idx = global_dof(cell, 2, nvars)
-
-            write_state[rho_idx] = read_state[rho_idx] - (dt / dx) * (right.flux[1] - left.flux[1])
-
-            write_state[mom_idx] = read_state[mom_idx] - (dt / dx) * (right.flux[2] - left.flux[2])
-
-            write_state[mom_idx] += (dt / 2) * (right.source + left.source)
-        end
-        # Swap read/write buffers for the next directional sweep
-        read_state, write_state = write_state, read_state
+        return nothing
     end
 
-    # If the final sweep ended in u_buffer (odd number of dimensions),
-    # copy it back into u_new.
-    if read_state !== cache.u_new
-        copyto!(cache.u_new, read_state)
+    # Interior faces: nx - 1 of them, between cell i and cell i+1
+    @inbounds for i in 1:(nx - 1)
+        u_l, phi_l = state_phi(CartesianIndex(i))
+        u_r, phi_r = state_phi(CartesianIndex(i + 1))
+        apply_interface!(i, i + 1, u_l, phi_l, u_r, phi_r)
     end
 
-    # Advance the solution
-    copyto!(cache.u, cache.u_new)
+    # Boundary face(s)
+    if periodic
+        u_l, phi_l = state_phi(CartesianIndex(nx))
+        u_r, phi_r = state_phi(CartesianIndex(1))
+        apply_interface!(nx, 1, u_l, phi_l, u_r, phi_r)
+    else
+        Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
+        u_gl, phi_gl = state_phi(Ig_l)
+        u_1,  phi_1  = state_phi(CartesianIndex(1))
+        contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, 1, equations, dt, dx, eta)
+        rho_1_idx, mom_1_idx = global_dof(1, 1, nvars), global_dof(1, 2, nvars)
+        write_state[rho_1_idx] += (dt / dx) * contrib.flux[1]
+        write_state[mom_1_idx] += (dt / dx) * contrib.flux[2]
+        write_state[mom_1_idx] += (dt / 2) * contrib.source
+
+        u_nx, phi_nx = state_phi(CartesianIndex(nx))
+        Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
+        u_gr, phi_gr = state_phi(Ig_r)
+        contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, 1, equations, dt, dx, eta)
+        rho_nx_idx, mom_nx_idx = global_dof(nx, 1, nvars), global_dof(nx, 2, nvars)
+        write_state[rho_nx_idx] -= (dt / dx) * contrib.flux[1]
+        write_state[mom_nx_idx] -= (dt / dx) * contrib.flux[2]
+        write_state[mom_nx_idx] += (dt / 2) * contrib.source
+    end
+
+    # NDIMS == 1, so the single sweep above is already the final state.
+    # `cache.u_new` isn't used by this stage (it exists for a possible
+    # future multi-axis ping-pong, mirroring the unused `dl/d/du` fields in
+    # `EllipticCache`) — advance directly from `write_state`.
+    copyto!(cache.u, write_state)
     return nothing
 end
 

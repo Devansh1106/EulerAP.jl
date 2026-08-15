@@ -27,7 +27,7 @@ All arrays avoid re-allocation on every time step.
 """
 # Separate struct holding NewtonCache for scalability
 mutable struct EllipticCache{TV, TJ, TN}
-    # Thomas algorithm work arrays (used in assemble_nonlinear_jacobian!)
+    # Thomas algorithm work arrays (unused now, kept for struct compatibility)
     dl::TV
     d::TV
     du::TV
@@ -37,6 +37,15 @@ mutable struct EllipticCache{TV, TJ, TN}
 
     # Jacobian prototype
     jacobian::TJ
+
+    # Precomputed once per elliptic (Newton) solve by
+    # `update_correction_coefficients!` — the η dt² ρ̄ⁿ_{i±1/2} correction is
+    # constant across all Newton iterations for a given solve (only φ
+    # changes), so both `assemble_nonlinear_residual!` and
+    # `assemble_nonlinear_jacobian!` read these instead of recomputing
+    # `gamma_mean`/density-ghost lookups on every call.
+    alpha_im1::TV
+    alpha_ip1::TV
 
     # Newton solver cache (holds all Newton-related state)
     newton_cache::TN
@@ -175,6 +184,8 @@ function create_elliptic_cache(mesh::CartesianMesh{1},
                          zeros(T, nx),      # du (unused now, kept for struct compatibility)
                          zeros(T, nx),      # residual
                          jacobian,
+                         zeros(T, nx),      # alpha_im1
+                         zeros(T, nx),      # alpha_ip1
                          newton_cache)
 end
 
