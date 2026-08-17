@@ -122,6 +122,12 @@ mutable struct IMEXCache{TU,TP, TR, TW, TE}
 
     # Diffusion coefficient η, recomputed each timestep
     eta::TE
+
+    # Velocity at each cell, derived from `u`. Recomputed once per timestep
+    # by `update_primitive_variables!` (valid for the `u` at the START of
+    # the current timestep, uⁿ) rather than re-derived via division every
+    # time a stage needs it — see `rho_vel_at`.
+    vel::TR
 end
 
 function IMEXCache(u0, phi0)
@@ -134,7 +140,8 @@ function IMEXCache(u0, phi0)
               Vector{T}(undef, n),
               Vector{T}(undef, n),
               phi0,
-              zero(T))
+              zero(T),
+              similar(phi0))   # vel
 end
 
 """

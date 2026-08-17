@@ -13,6 +13,74 @@ using TimerOutputs
 end
 
 """
+    update_primitive_variables!(cache::IMEXCache, semi)
+
+Compute velocity `vel = m/ρ` at every interior cell from the current
+conservative state `cache.u` and store it in `cache.vel`. Called once per
+timestep, before any stage reads velocity, so `compute_dt_1!`,
+`compute_dt_2!`, and `ExplicitCorrectionStage!` all read the same
+precomputed values via `rho_vel_at` instead of each re-deriving `vel` from
+`cache.u` independently (previously up to several times per cell per
+timestep, across those three functions).
+
+Only interior cells are cached: ghost/boundary states depend on `t` and the
+boundary condition and are touched far less often, so they're computed on
+the fly by `rho_vel_at` instead.
+"""
+function update_primitive_variables!(cache::IMEXCache, semi::AbstractSemidiscretization)
+    mesh  = semi.mesh
+    nvars = nvariables(semi.equations)
+    nx    = size(mesh, 1)
+
+    @inbounds for i in 1:nx
+        rho = cache.u[global_dof(i, 1, nvars)]
+        if rho <= 0
+            error("""
+                  Negative density entering update_primitive_variables!
+                  cell = $i
+                  rho  = $rho
+                  """)
+        end
+        mom = cache.u[global_dof(i, 2, nvars)]
+        cache.vel[i] = mom / rho
+    end
+
+    return nothing
+end
+
+"""
+    rho_vel_at(cache::IMEXCache, semi, I, t)
+
+Return `(rho, vel)` at cell/ghost index `I`. Interior cells (including a
+`neighbor_index`-clamped `ExtrapolateBC`/`NeumannBC` ghost, which resolves
+to a valid interior index) read `cache.u`/`cache.vel` directly — no
+division. Genuine out-of-range ghost states (`DirichletBC`/`MixedBC`, or a
+periodic wrap that `neighbor_index` has already resolved to a valid
+interior index too) are computed on the fly since they depend on `t` and
+aren't cached.
+"""
+@inline function rho_vel_at(cache::IMEXCache, semi::AbstractSemidiscretization,
+                            I::CartesianIndex, t)
+    nx = size(semi.mesh, 1)
+    if 1 <= I[1] <= nx
+        cell  = cell_index(I, semi)
+        nvars = nvariables(semi.equations)
+        return cache.u[global_dof(cell, 1, nvars)], cache.vel[cell]
+    end
+
+    s = _hyperbolic_state(cache.u, I, semi, t)
+    rho = s[1]
+    if rho <= 0
+        error("""
+              Negative density in rho_vel_at (ghost state)
+              time = $t
+              rho  = $rho
+              """)
+    end
+    return rho, s[2] / rho
+end
+
+"""
     explicit_density_flux(rho_l, rho_r, vel_l, vel_r, gamma)
 
 Density flux used in the explicit correction stage of the IMEX scheme,
@@ -66,26 +134,10 @@ function perform_stage!(
         cache.rho_hat[i] = cache.u[global_dof(i, 1, nvars)]
     end
 
-    rho_vel(I) = begin
-        s = _hyperbolic_state(cache.u, I, semi, t)
-        rho = s[1]
-        if rho <= 0
-            error("""
-                    Negative density entering ExplicitCorrectionStage
-
-                    time = $t
-                    cell = $(cell_index(I, semi))
-
-                    rho = $rho
-                    """)
-        end
-        return rho, s[2] / rho
-    end
-
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx - 1)
-        rho_l, vel_l = rho_vel(CartesianIndex(i))
-        rho_r, vel_r = rho_vel(CartesianIndex(i + 1))
+        rho_l, vel_l = rho_vel_at(cache, semi, CartesianIndex(i), t)
+        rho_r, vel_r = rho_vel_at(cache, semi, CartesianIndex(i + 1), t)
         f = explicit_density_flux(rho_l, rho_r, vel_l, vel_r, gamma)
         cache.rho_hat[i]     -= (dt / dx) * f
         cache.rho_hat[i + 1] += (dt / dx) * f
@@ -93,19 +145,19 @@ function perform_stage!(
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = rho_vel(CartesianIndex(nx))
-        rho_r, vel_r = rho_vel(CartesianIndex(1))
+        rho_l, vel_l = rho_vel_at(cache, semi, CartesianIndex(nx), t)
+        rho_r, vel_r = rho_vel_at(cache, semi, CartesianIndex(1), t)
         f = explicit_density_flux(rho_l, rho_r, vel_l, vel_r, gamma)
         cache.rho_hat[nx] -= (dt / dx) * f
         cache.rho_hat[1]  += (dt / dx) * f
     else
-        rho_gl, vel_gl = rho_vel(neighbor_index(CartesianIndex(1), semi, 1, -1))
-        rho_1,  vel_1  = rho_vel(CartesianIndex(1))
+        rho_gl, vel_gl = rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
+        rho_1,  vel_1  = rho_vel_at(cache, semi, CartesianIndex(1), t)
         f_l = explicit_density_flux(rho_gl, rho_1, vel_gl, vel_1, gamma)
         cache.rho_hat[1] += (dt / dx) * f_l
 
-        rho_nx, vel_nx = rho_vel(CartesianIndex(nx))
-        rho_gr, vel_gr = rho_vel(neighbor_index(CartesianIndex(nx), semi, 1, 1))
+        rho_nx, vel_nx = rho_vel_at(cache, semi, CartesianIndex(nx), t)
+        rho_gr, vel_gr = rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
         f_r = explicit_density_flux(rho_nx, rho_gr, vel_nx, vel_gr, gamma)
         cache.rho_hat[nx] -= (dt / dx) * f_r
     end
@@ -123,7 +175,7 @@ end
 # where ρ̄_{i+1/2} = gamma_mean(ρ_i, ρ_{i+1}, γ).
 # ============================================================================
 
-@inline function compute_eta!(cache::IMEXCache, semi::AbstractSemidiscretization)
+@inline function compute_eta!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
     equations = semi.equations
     mesh      = semi.mesh
     gamma     = equations.gamma
@@ -133,12 +185,12 @@ end
 
     @inbounds for I in eachcell(mesh)
         # Center density
-        u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
+        u_cc = _hyperbolic_state(cache.u, I, semi, t)
         rho_c = u_cc[1]
 
         # Right neighbor
         Ip1 = neighbor_index(I, semi, 1, 1)
-        u_rr = _hyperbolic_state(cache.u, Ip1, semi, zero(T))
+        u_rr = _hyperbolic_state(cache.u, Ip1, semi, t)
         rho_r = u_rr[1]
 
         # Gamma-mean at right interface
@@ -155,6 +207,14 @@ end
     return nothing
 end
 
+"""
+    compute_dt_1!(cache, semi, t)
+
+NOTE: not currently called anywhere in `solve_imex` (only `compute_dt_2!`
+is); kept as an alternative CFL condition. Updated alongside
+`compute_dt_2!`/`ExplicitCorrectionStage!` for consistency should it be
+wired in later.
+"""
 @inline function compute_dt_1!(cache::IMEXCache, semi::AbstractSemidiscretization, t)
     mesh      = semi.mesh
     lambda    = semi.equations_elliptic.lambda
@@ -165,13 +225,12 @@ end
 
     @inbounds for I in eachcell(mesh)
 
-        # Center state
-        u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
-        rho_c = u_cc[1]
-        vel_c = u_cc[2] / rho_c
+        # Center state — interior, so this reads cache.u/cache.vel directly
+        # (no division); see update_primitive_variables!/rho_vel_at.
+        rho_c, vel_c = rho_vel_at(cache, semi, I, t)
 
         # Potential at center
-        phi_c = _elliptic_var(cache.phi, I, semi, zero(T))
+        phi_c = _elliptic_var(cache.phi, I, semi, t)
 
         y = 4*lambda^2 / (dx^2)
         denom = exp(phi_c) + y
@@ -198,22 +257,20 @@ end
     @inbounds for I in eachcell(mesh)
         cell = cell_index(I, semi)
 
-        # Center state
-        u_cc = _hyperbolic_state(cache.u, I, semi, zero(T))
-        rho_i = u_cc[1]
-        vel_i = u_cc[2] / rho_i
+        # Center state — interior, reads cache.u/cache.vel directly.
+        rho_i, vel_i = rho_vel_at(cache, semi, I, t)
 
         # Potential at center
-        phi_i = _elliptic_var(cache.phi, I, semi, zero(T))
+        phi_i = _elliptic_var(cache.phi, I, semi, t)
 
-        # Right neighbor
+        # Right neighbor — interior for all but the last cell at a
+        # non-periodic right boundary, where it falls back to an on-the-fly
+        # ghost evaluation inside rho_vel_at.
         Ip1 = neighbor_index(I, semi, 1, 1)
-        u_rr = _hyperbolic_state(cache.u, Ip1, semi, zero(T))
-        rho_r = u_rr[1]
-        vel_r = u_rr[2] / rho_r
+        rho_r, vel_r = rho_vel_at(cache, semi, Ip1, t)
 
         # Potential at right neighbor
-        phi_r = _elliptic_var(cache.phi, Ip1, semi, zero(T))
+        phi_r = _elliptic_var(cache.phi, Ip1, semi, t)
 
         # Density check
         if rho_i < 1e-12 || rho_r < 1e-12
@@ -477,9 +534,15 @@ function solve_imex(semi::AbstractSemidiscretization,
     @timeit stats.timer "total_runtime" begin
 
         while t < last(tspan)
+            # Velocity derived from uⁿ, cached for the rest of this
+            # timestep (compute_dt_2!, ExplicitCorrectionStage!) instead of
+            # each re-deriving it via division — see
+            # update_primitive_variables!/rho_vel_at.
+            update_primitive_variables!(cache, semi)
+
             # Compute diffusion coefficient from current density state
             # (must happen BEFORE compute_dt_2!, which uses cache.eta)
-            compute_eta!(cache, semi)
+            compute_eta!(cache, semi, t)
             cfl_dt = compute_dt_2!(cache, semi, t)
             actual_dt = min(cfl_dt, last(tspan) - t)
 
