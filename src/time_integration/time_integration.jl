@@ -56,7 +56,6 @@ end
 # Used in Callbacks
 @inline integrator(context::CallbackContext) = context.simulation.integrator
 
-
 # ======================================
 # ----------- IMEXIntegrator ----------- 
 # ======================================
@@ -71,6 +70,7 @@ struct ImplicitPredictionStage <: AbstractIMEXStage end
 
 # Schemes can be defined here
 struct FirstOrderThreeStagesIMEX <: AbstractIMEXScheme end
+struct SecondOrderFiveStagesIMEX <: AbstractIMEXScheme end
 
 """
     stages(scheme)
@@ -85,63 +85,391 @@ function stages end
     ImplicitCorrectionStage(),
 )
 
+# Second-order (ARS222) stages — numbered per RK stage
+struct ExplicitCorrectionStage1 <: AbstractIMEXStage end
+struct ImplicitPredictionStage1 <: AbstractIMEXStage end
+struct ExplicitCorrectionStage2 <: AbstractIMEXStage end
+struct ImplicitPredictionStage2 <: AbstractIMEXStage end
+struct ImplicitCorrectionStage2 <: AbstractIMEXStage end
+
+@inline stages(::SecondOrderFiveStagesIMEX) = (
+    ExplicitCorrectionStage1(),
+    ImplicitPredictionStage1(),
+    ExplicitCorrectionStage2(),
+    ImplicitPredictionStage2(),
+    ImplicitCorrectionStage2(),
+)
+
 """
     IMEXIntegrator{S} <: AbstractTimeIntegrator
 
 IMEX time integrator carrying the scheme (e.g., `FirstOrderThreeStagesIMEX`).
-The elliptic solve uses a hand-coded Thomas algorithm via NonlinearSolve.jl.
 """
 struct IMEXIntegrator{S <: AbstractIMEXScheme} <: AbstractTimeIntegrator
     scheme::S
 end
 
-"""
-    IMEXCache
-
-Cache storing the intermediate solution states required by an IMEX
-time integration method.
-
-The cache owns only algorithmic states. Solver-specific workspaces
-(e.g. Newton residuals, Jacobians, Krylov vectors) are owned by the
-`EllipticCache`(@ref).
-"""
-mutable struct IMEXCache{TU,TP, TR, TW, TE}
-    # Current solution u^n
-    u::TU
-
-    rho_hat::TR
-
-    # Corrected solution u^{n+1}
-    u_new::TW
-
-    # Hyperbolic work buffer
-    u_buffer::TW
-
-    # Elliptic solution ϕ^{n+1}
-    phi::TP
-
-    # Diffusion coefficient η, recomputed each timestep
-    eta::TE
-
-    # Velocity at each cell, derived from `u`. Recomputed once per timestep
-    # by `update_primitive_variables!` (valid for the `u` at the START of
-    # the current timestep, uⁿ) rather than re-derived via division every
-    # time a stage needs it — see `rho_vel_at`.
-    vel::TR
+struct ARS222{T}
+    gamma_ars::T
+    delta_ars::T
 end
 
-function IMEXCache(u0, phi0)
-    # since rho_hat is 1 scalar per cell same as phi0
-    rho_hat = similar(phi0)
+"""
+    IMEXCacheFirstOrder
+
+Cache storing the intermediate solution states required by an IMEX first order time integration method.
+
+The cache owns only algorithmic states. Solver-specific workspaces
+(e.g. Newton residuals, Jacobians) are owned by the `EllipticCache`(@ref).
+"""
+mutable struct IMEXCacheFirstOrder{TU, TW, TP, TR, TE}
+    u::TU               # Current solution u^n
+    u_buffer::TW        # Hyperbolic work buffer
+    rho_hat::TR         # intermediate states
+    vel::TR             # part of primitive variable storing
+    phi::TP             # Elliptic solution ϕ^{n+1}
+    eta::TE             # η: recomputed each timestep
+end
+
+function IMEXCacheFirstOrder(u0::TU, phi0::TP) where {TU, TP}
     T = eltype(u0)
-    n = length(u0)
-    IMEXCache(u0,
-              rho_hat,
-              Vector{T}(undef, n),
-              Vector{T}(undef, n),
-              phi0,
-              zero(T),
-              similar(phi0))   # vel
+    IMEXCacheFirstOrder(u0,
+                        similar(u0),            # u_buffer
+                        similar(phi0),          # rho_hat (since rho_hat is 1 scalar per cell same as phi0)
+                        similar(phi0),          # vel
+                        phi0,
+                        zero(T),)               # eta
+end
+
+"""
+    IMEXCacheSecondOrder
+
+Cache storing the intermediate solution states required by an IMEX second order time integration method.
+
+The cache owns only algorithmic states. Solver-specific workspaces
+(e.g. Newton residuals, Jacobians) are owned by the `EllipticCache`(@ref).
+"""
+mutable struct IMEXCacheSecondOrder{TU, TW, TP, TR, TE}
+    u::TU           # current solution u^n
+    u_reconstructed::TW   # reconstructed state used for slope-limited interfaces
+    rho_hat::TR     # intermediate states
+    m_hat::TR       # intermediate states
+    rho_exp::TR     # intermediate states
+    m_exp::TR       # intermediate states
+    vel::TR         # part of primitive variable storing
+    phi::TP         # Elliptic solution ϕ^{n+1}
+    eta::TE         # η: recomputed each timestep
+    explicit_density_flux_diff_stage1::TR           # storing explicit density flux differences for re-use
+    semi_implicit_density_flux_diff_stage1::TR      # storing semi implicit density flux differences for re-use
+    momentum_flux_diff_stage1::TR
+
+    explicit_density_flux_diff_stage2::TR           # storing explicit density flux differences for re-use
+    semi_implicit_density_flux_diff_stage2::TR      # storing semi implicit density flux differences for re-use
+    momentum_flux_diff_stage2::TR
+    slopes::TW
+end
+
+function IMEXCacheSecondOrder(u0::TU, phi0::TP) where {TU, TP}
+    T = eltype(u0)
+    IMEXCacheSecondOrder(u0,
+                        similar(u0),            # u_reconstructed
+                        similar(phi0),          # rho_hat (since rho_hat is 1 scalar per cell same as phi0)
+                        similar(phi0),          # m_hat
+                        similar(phi0),          # rho_exp
+                        similar(phi0),          # m_exp
+                        similar(phi0),          # vel
+                        phi0,
+                        zero(T),                # eta
+                        similar(phi0),          # explicit_density_flux_diff_stage1
+                        similar(phi0),          # semi_implicit_density_flux_diff_stage1
+                        similar(phi0),          # momentum_flux_diff_stage1
+                        similar(phi0),          # explicit_density_flux_diff_stage2
+                        similar(phi0),          # semi_implicit_density_flux_diff_stage2
+                        similar(phi0),          # momentum_flux_diff_stage2
+                        similar(u0),)           # slopes
+end
+
+# ============================================================================
+# compute_eta!
+# ============================================================================
+# Compute the coefficient η as the maximum over all interfaces of
+#
+#     η = max_i  1.5 * ρ̄_{i+1/2} / ρ_i
+#
+# where ρ̄_{i+1/2} = gamma_mean(ρ_i, ρ_{i+1}, γ).
+# ============================================================================
+
+@inline function compute_eta!(cache::Union{IMEXCacheFirstOrder, IMEXCacheSecondOrder}, semi::AbstractSemidiscretization, t)
+    equations = semi.equations
+    mesh      = semi.mesh
+    gamma     = equations.gamma
+
+    T = eltype(mesh.dx)
+    eta_val = zero(T)
+
+    @inbounds for I in eachcell(mesh)
+        # Center density
+        u_cc = cell_state(cache.u, I, semi, t)
+        rho_c = u_cc[1]
+
+        # Right neighbor
+        Ip1 = neighbor_index(I, semi, 1, 1)
+        u_rr = cell_state(cache.u, Ip1, semi, t)
+        rho_r = u_rr[1]
+
+        # Gamma-mean at right interface
+        rho_half = gamma_mean(rho_c, rho_r, gamma)
+
+        if rho_c > zero(T)
+            eta_val = max(eta_val, 1.5 * rho_half / rho_c)
+        else
+            error("Density is negative: rho_i = $rho_c")
+        end
+    end
+
+    cache.eta = eta_val
+    return nothing
+end
+
+
+"""
+    compute_dt_1!(cache, semi, t)
+
+NOTE: not currently called anywhere in `solve_imex` (only `compute_dt_2!`
+is); kept as an alternative CFL condition. Updated alongside
+`compute_dt_2!`/`ExplicitCorrectionStage!` for consistency should it be
+wired in later.
+"""
+@inline function compute_dt_1!(cache::IMEXCacheFirstOrder, semi::AbstractSemidiscretization, t)
+    mesh      = semi.mesh
+    lambda    = semi.equations_elliptic.lambda
+    T = eltype(mesh.dx)
+    dx = mesh.dx[1]
+
+    k_val = typemin(T)
+
+    @inbounds for I in eachcell(mesh)
+
+        # Center state — interior, so this reads cache.u/cache.vel directly
+        # (no division); see update_primitive_variables!/rho_vel_at.
+        rho_c, vel_c = rho_vel_at(cache.u, cache.vel, semi, I, t)
+
+        # Potential at center
+        phi_c = _elliptic_var(cache.phi, semi, I, t)
+
+        y = 4*lambda^2 / (dx^2)
+        denom = exp(phi_c) + y
+        second_term = sqrt(rho_c / denom)
+        k = abs(vel_c) + second_term
+
+        if k > k_val
+            k_val = k
+        end
+    end
+    dt_val = 0.75 * dx / k_val
+    return dt_val
+end
+
+@inline function compute_dt_2!(cache::Union{IMEXCacheFirstOrder, IMEXCacheSecondOrder}, semi::AbstractSemidiscretization, t)
+    mesh      = semi.mesh
+    eta       = cache.eta
+
+    T = eltype(mesh.dx)
+    dx = mesh.dx[1]
+
+    k_val = typemin(T)
+
+    @inbounds for I in eachcell(mesh)
+        cell = cell_index(I, semi)
+
+        # Center state — interior, reads cache.u/cache.vel directly.
+        rho_i, vel_i = rho_vel_at(cache.u, cache.vel, semi, I, t)
+
+        # Potential at center
+        phi_i = _elliptic_var(cache.phi, semi, I, t)
+
+        # Right neighbor — interior for all but the last cell at a
+        # non-periodic right boundary, where it falls back to an on-the-fly
+        # ghost evaluation inside rho_vel_at.
+        Ip1 = neighbor_index(I, semi, 1, 1)
+        rho_r, vel_r = rho_vel_at(cache.u, cache.vel, semi, Ip1, t)
+
+        # Potential at right neighbor
+        phi_r = _elliptic_var(cache.phi, semi, Ip1, t)
+
+        # Density check
+        if rho_i < 1e-12 || rho_r < 1e-12
+            error("""
+                  Density below threshold in compute_dt!
+                  time    = $t
+                  cell    = $cell
+                  rho_i   = $rho_i
+                  rho_r   = $rho_r
+                  eta     = $eta
+                  """)
+        end
+
+        avg = (vel_i + vel_r)/2
+        phi_diff = eta * abs(phi_r - phi_i)
+        k = abs(avg) + phi_diff
+
+        if k > k_val
+            k_val = k
+        end
+    end
+    dt_val = 0.1 * dx / k_val
+
+    if dt_val < 1e-12
+        error("""
+              dt below threshold in compute_dt!
+              time        = $t
+              dt          = $dt_val
+              eta         = $eta
+              k_val       = $k_val
+              """)
+    end
+    return dt_val
+end
+
+"""
+    update_primitive_variables!(cache::Union{IMEXCacheFirstOrder, IMEXCacheSecondOrder}, semi)
+
+Compute velocity `vel = m/ρ` at every interior cell from the current
+conservative state `cache.u` and store it in `cache.vel`. Called once per
+timestep, before any stage reads velocity, so `compute_dt_1!`,
+`compute_dt_2!`, and `ExplicitCorrectionStage!` all read the same
+precomputed values via `rho_vel_at` instead of each re-deriving `vel` from
+`cache.u` independently.
+
+Only interior cells are cached: ghost/boundary states may depend on `t` and the
+boundary condition and are touched far less often, so they're computed on
+the fly by `rho_vel_at` instead.
+"""
+function update_primitive_variables!(cache::Union{IMEXCacheFirstOrder, IMEXCacheSecondOrder},
+                                     semi::AbstractSemidiscretization)
+    mesh  = semi.mesh
+    nvars = nvariables(semi.equations)
+    nx    = size(mesh, 1)
+
+    @inbounds for i in 1:nx
+        # Fetch indices once to avoid redundant function calls
+        idx_rho = global_dof(i, 1, nvars)
+        idx_mom = global_dof(i, 2, nvars)
+        
+        rho = cache.u[idx_rho]
+        
+        # Extract error path to a non-allocating helper function
+        if rho <= 0
+            throw_negative_density_error(i, rho)
+        end
+        
+        mom = cache.u[idx_mom]
+        cache.vel[i] = mom / rho
+    end
+
+    # Helper function
+    @noinline function throw_negative_density_error(i, rho)
+        error("Negative density entering update_primitive_variables!\ncell = $i\nrho  = $rho")
+    end
+
+    return nothing
+end
+
+"""
+    rho_vel_at(u, vel, semi, I, t)
+
+Return `(rho, vel)` at cell/ghost index `I`. Interior cells (including a
+`neighbor_index`-clamped `ExtrapolateBC`/`NeumannBC` ghost, which resolves
+to a valid interior index) read `u`/`vel` directly — no division. Genuine
+out-of-range ghost states (`DirichletBC`/`MixedBC`, or a periodic wrap that
+`neighbor_index` has already resolved to a valid interior index too) are
+computed on the fly since they may depend on `t` and aren't cached.
+"""
+@inline function rho_vel_at(u, vel, semi::AbstractSemidiscretization,
+                            I::CartesianIndex, t)
+    nx = size(semi.mesh, 1)
+    # This branch is needed in order to use cached velocity and return it directly instead of 
+    # performing divisions for all cells (division are very slow operations).
+    if 1 <= I[1] <= nx
+        cell  = cell_index(I, semi)
+        nvars = nvariables(semi.equations)
+        return SVector{2}(u[global_dof(cell, 1, nvars)], vel[cell])
+    end
+
+    # Only being called for boundary cells (due to their possible dependence on `t`)
+    s = cell_state(u, I, semi, t)
+    rho = s[1]
+    if rho <= 0
+        error("""
+              Negative density in rho_vel_at (ghost state)
+              time = $t
+              rho  = $rho
+              """)
+    end
+    return SVector{2}(rho, s[2] / rho)
+end
+
+@inline function rho_vel_at(u, semi::AbstractSemidiscretization,
+                            I::CartesianIndex, t)
+    s = cell_state(u, I, semi, t)
+    rho = s[1]
+    if rho <= 0
+        error("Negative density in rho_vel_at: rho = $rho")
+    end
+    return SVector{2}(rho, s[2] / rho)
+end
+
+@inline function reconstructed_rho_vel_at(cache,
+                                          semi,
+                                          I,
+                                          side,)
+    equations = semi.equations
+    dx        = semi.mesh.dx[1]
+    nvars     = nvariables(equations)
+
+    rho_idx = global_dof(I, 1, nvars)
+    m_idx   = global_dof(I, 2, nvars)
+
+    sgn = side === :left ? 1.0 : -1.0
+
+    rho = cache.u_reconstructed[rho_idx] +
+          sgn * 0.5 * dx * cache.slopes[rho_idx]
+
+    m = cache.u_reconstructed[m_idx] +
+        sgn * 0.5 * dx * cache.slopes[m_idx]
+
+    vel = m / rho
+
+    return rho, vel
+end
+
+
+# Reconstructed *conservative* state (ρ, m) at the given side of cell I.
+# Unlike `reconstructed_rho_vel_at` (which returns (ρ, vel)), this returns the
+# state layout expected by `solver.flux`.
+@inline function reconstructed_conservative_state_at(cache, semi, I, side)
+    nvars = nvariables(semi.equations)
+    dx    = semi.mesh.dx[1]
+
+    rho_idx = global_dof(I, 1, nvars)
+    m_idx   = global_dof(I, 2, nvars)
+
+    sgn = side === :left ? 1.0 : -1.0
+
+    rho = cache.u_reconstructed[rho_idx] + sgn * 0.5 * dx * cache.slopes[rho_idx]
+    m   = cache.u_reconstructed[m_idx]   + sgn * 0.5 * dx * cache.slopes[m_idx]
+
+    return SVector{2}(rho, m)
+end
+
+# Fill a preallocated u (hyperbolic block) from rho and m arrays
+function wrap_array!(u, rho::T, m::T, semi::SemidiscretizationHyperbolicElliptic) where T
+    nvars = nvariables(semi.equations)
+    @inbounds for i in eachindex(rho)
+        u[global_dof(i, 1, nvars)] = rho[i]
+        u[global_dof(i, 2, nvars)] = m[i]
+    end
+    return nothing
 end
 
 """
@@ -159,7 +487,8 @@ function solve(semi,
 
     return solve_imex(semi,
                       integrator,
-                      tspan;
+                      tspan,
+                      integrator.scheme;
                       dt = dt,
                       callbacks=callbacks)
 end
