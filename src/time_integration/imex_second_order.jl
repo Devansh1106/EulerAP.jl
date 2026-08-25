@@ -55,7 +55,7 @@ function perform_stage!(::ExplicitCorrectionStage1,
     reconstruct_slopes!(cache, semi, t)
 
     # for u^2_E
-    calculate_explicit_density_flux_diff_stage2(semi, cache, t)
+    calculate_explicit_density_flux_diff_stage2(semi, cache)
 
     @inbounds for i in 1:nx
         # rho_hat and no m_hat (its same as m_n)
@@ -154,6 +154,13 @@ function perform_stage!(::ExplicitCorrectionStage2,
         cache.rho_hat[i] -= (dt / dx) * (1.0 - coeffs.gamma_ars) * f
         cache.m_hat[i] -= (dt / dx) * (1.0 - coeffs.gamma_ars) * cache.momentum_flux_diff_stage2[i]
     end
+
+    # putting rho^3_E and m^3_E in u_reconstructed
+    wrap_array!(cache.u_reconstructed, cache.rho_exp, cache.m_exp, semi)
+    reconstruct_slopes!(cache, semi, t)
+
+    # fill cache.rho_hat directly so no need of loop after this.
+    calculate_explicit_density_flux_diff_stage3(semi, cache, dt, coeffs.gamma_ars)
     return nothing
 end
 
@@ -208,7 +215,7 @@ function perform_stage!(::ImplicitCorrectionStage2,
     dx       = mesh.dx[1]
 
     # calculate_semi_implicit_density_flux_diff_stage3(semi, cache, t)
-    wrap_array!(cache.u_reconstructed, cache.rho_exp, cache.m_exp, semi)
+    # wrap_array!(cache.u_reconstructed, cache.rho_exp, cache.m_exp, semi)
 
     # DEBUG: check positivity of the explicit predictor before reconstruction
     m_min, i_min = findmin(cache.rho_exp)
@@ -237,7 +244,7 @@ function perform_stage!(::ImplicitCorrectionStage2,
         error("rho_exp went negative: min = ", m_min, " at cell ", i_min)
     end
 
-    reconstruct_slopes!(cache, semi, t)
+    # reconstruct_slopes!(cache, semi, t)
 
     @inbounds for i in 1:nx
         I = CartesianIndex(i)
@@ -247,20 +254,23 @@ function perform_stage!(::ImplicitCorrectionStage2,
         cache.u[m_idx]   = cache.m_hat[i]
     end
 
+    # directly fill cache.u[rho] with the final solution of density as 
+    # there is no need to store the semi implicit density flux
+    # u^3_E and reconstructed slopes are already there from last stages
+    calculate_semi_implicit_density_flux_diff_stage3(semi, cache, t, dt, coeffs.gamma_ars)
+
+    # calculate_momentum_flux_diff_stage3(semi, cache, t, dt, coeffs.gamma_ars)
+
     # One `solver.flux` evaluation per interface, applied to both neighbors
     # (same pattern as the first-order `ImplicitCorrectionStage`).
-    function apply_interface!(cell_l, cell_r, u_l, phi_l, u_r, phi_r)
+    function apply_interface_momentum!(cell_l, cell_r, u_l, phi_l, u_r, phi_r)
         contrib = solver.flux(u_l, u_r, phi_l, phi_r, orientation, equations, dt, dx, eta)
 
-        rho_idx_l, m_idx_l = global_dof(cell_l, 1, nvars), global_dof(cell_l, 2, nvars)
-        rho_idx_r, m_idx_r = global_dof(cell_r, 1, nvars), global_dof(cell_r, 2, nvars)
+        m_idx_l = global_dof(cell_l, 2, nvars)
+        m_idx_r = global_dof(cell_r, 2, nvars)
 
-        f = (dt / dx) * coeffs.gamma_ars * contrib.flux[1]
         g = (dt / dx) * coeffs.gamma_ars * contrib.flux[2]
         m = (dt / 2) * coeffs.gamma_ars * contrib.source
-
-        cache.u[rho_idx_l] -= f
-        cache.u[rho_idx_r] += f
 
         cache.u[m_idx_l] -= g
         cache.u[m_idx_r] += g
@@ -277,16 +287,16 @@ function perform_stage!(::ImplicitCorrectionStage2,
         phi_l = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
         phi_r = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
-        apply_interface!(i, i + 1, u_l, phi_l, u_r, phi_r)
+        apply_interface_momentum!(i, i + 1, u_l, phi_l, u_r, phi_r)
     end
 
     # Boundary face(s)
     if periodic
-        u_l = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left)
+        u_l   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left)
         u_r   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right)
         phi_l = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_r = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
-        apply_interface!(nx, 1, u_l, phi_l, u_r, phi_r)
+        apply_interface_momentum!(nx, 1, u_l, phi_l, u_r, phi_r)
     else
         # left boudnary
         Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
@@ -297,14 +307,13 @@ function perform_stage!(::ImplicitCorrectionStage2,
 
         contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, orientation, equations, dt, dx, eta)
 
-        f_1 = (dt / dx) * coeffs.gamma_ars * contrib.flux[1]
+        # f_1 = (dt / dx) * coeffs.gamma_ars * contrib.flux[1]
         g_1 = (dt / dx) * coeffs.gamma_ars * contrib.flux[2]
         m_1 = (dt / 2) * coeffs.gamma_ars * contrib.source
 
-        rho_1_idx, m_1_idx = global_dof(1, 1, nvars), global_dof(1, 2, nvars)
-        cache.u[rho_1_idx]  += f_1
-        cache.u[m_1_idx]    += g_1
-        cache.u[m_1_idx]    += m_1
+        m_1_idx = global_dof(1, 2, nvars)
+        cache.u[m_1_idx] += g_1
+        cache.u[m_1_idx] += m_1
 
         # right boundary
         Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
@@ -315,13 +324,11 @@ function perform_stage!(::ImplicitCorrectionStage2,
 
         contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, orientation, equations, dt, dx, eta)
 
-        f_2 = (dt / dx) * coeffs.gamma_ars * contrib.flux[1]
         g_2 = (dt / dx) * coeffs.gamma_ars * contrib.flux[2]
         m_2 = (dt / 2) * coeffs.gamma_ars * contrib.source
 
 
-        rho_nx_idx, m_nx_idx = global_dof(nx, 1, nvars), global_dof(nx, 2, nvars)
-        cache.u[rho_nx_idx]  -= f_2
+        m_nx_idx = global_dof(nx, 2, nvars)
         cache.u[m_nx_idx]    -= g_2
         cache.u[m_nx_idx]    += m_2 # source always gets added (- sign is taken care in the function itself)
     end
@@ -463,19 +470,6 @@ function solve_imex(semi::AbstractSemidiscretization,
                     coeffs,
                 )
             end
-
-            # # Stage 3: Implicit correction (evaluated at current time t)
-            # @timeit stats.timer "ImplicitCorrectionStage" begin
-            #     perform_stage!(
-            #         ImplicitCorrectionStage1(),
-            #         semi,
-            #         cache,
-            #         integrator,
-            #         actual_dt,
-            #         t,
-            #     )
-            # end
-
             stats.mass_after_stage3 =
                 total_mass(cache.u, semi)
 
@@ -753,7 +747,7 @@ end
 
 
 # stage 2 helper functions
-@inline function calculate_explicit_density_flux_diff_stage2(semi::SemidiscretizationHyperbolicElliptic, cache, t::T) where T
+@inline function calculate_explicit_density_flux_diff_stage2(semi::SemidiscretizationHyperbolicElliptic, cache)
 
     equations = semi.equations
     mesh      = semi.mesh
@@ -891,7 +885,6 @@ end
 
         flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
 
-        # TODO: is this correct?
         cache.semi_implicit_density_flux_diff_stage2[i]     -= flux_semi_imp
         cache.semi_implicit_density_flux_diff_stage2[i + 1] += flux_semi_imp
     end
@@ -907,8 +900,7 @@ end
 
         flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
 
-        # TODO: is this correct?
-        cache.semi_implicit_density_flux_diff_stage2[1] += flux_semi_imp
+        cache.semi_implicit_density_flux_diff_stage2[1]  += flux_semi_imp
         cache.semi_implicit_density_flux_diff_stage2[nx] -= flux_semi_imp
     else
         # left boundary
@@ -922,7 +914,6 @@ end
         flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
 
         
-        # TODO: is this correct?
         cache.semi_implicit_density_flux_diff_stage2[1] += flux_semi_imp_l
 
         # right boundary
@@ -933,11 +924,9 @@ end
 
         rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
-        flux_exp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
-
+        flux_semi_exp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
         
-        # TODO: is this correct?
-        cache.semi_implicit_density_flux_diff_stage2[nx] -= flux_exp_r
+        cache.semi_implicit_density_flux_diff_stage2[nx] -= flux_semi_exp_r
     end
 end
 
@@ -1120,15 +1109,145 @@ end
 
 
 # helper function for explicit part involving rho^3_E and u^3_E
-# @inline function calculate_explicit_density_flux_diff_stage3()
+@inline function calculate_explicit_density_flux_diff_stage3(semi::SemidiscretizationHyperbolicElliptic, cache, dt::T, gamma_ars::T) where T 
     
-# end
+    equations = semi.equations
+    mesh      = semi.mesh
+
+    gamma = equations.gamma
+
+    nx       = size(mesh, 1)
+    dx       = mesh.dx[1]
+    periodic = semi.boundary_conditions.left isa PeriodicBC
+
+    # for density flux
+    # Interior faces: nx - 1 of them, between cell i and cell i+1
+    @inbounds for i in 1:(nx-1)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+
+        rho_half     = gamma_mean(rho_l, rho_r, gamma)
+
+        flux_exp     = explicit_density_flux(vel_l, vel_r, rho_half)
+        f = (dt / dx) * gamma_ars * flux_exp
+        cache.rho_hat[i]     += f
+        cache.rho_hat[i + 1] -= f
+    end
+
+    # Boundary face(s)
+    if periodic
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+
+        rho_half = gamma_mean(rho_l, rho_r, gamma)
+
+        flux_exp = explicit_density_flux(vel_l, vel_r, rho_half)
+        f = (dt / dx) * gamma_ars * flux_exp
+        cache.rho_hat[nx]     += f
+        cache.rho_hat[1]      -= f
+    else
+        # left boundary
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+
+        rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
+
+        flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
+        f = (dt / dx) * gamma_ars * flux_exp_l
+
+        cache.rho_hat[1] -= flux_exp_l
+
+        # right boundary
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right)
+
+        rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
+
+        flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
+        f = (dt / dx) * gamma_ars * flux_exp_r
+
+        cache.rho_hat[nx] += flux_exp_r
+    end
+end
 
 # helper function for explicit part involving phi^3_E
-# @inline function calculate_semi_implicit_density_flux_diff_stage3()
-#     wrap_array!(cache.u_buffer, rho_exp, m_exp, semi) 
-# end
+@inline function calculate_semi_implicit_density_flux_diff_stage3(semi::SemidiscretizationHyperbolicElliptic, cache, t::T, dt::T, gamma_ars::T) where T    
+    equations = semi.equations
+    mesh      = semi.mesh
 
+    gamma = equations.gamma
+    nvars = nvariables(equations)
 
+    nx       = size(mesh, 1)
+    dx       = mesh.dx[1]
+    periodic = semi.boundary_conditions.left isa PeriodicBC
+
+    eta = cache.eta
+    dx  = mesh.dx[1]
+    # Interior faces: nx - 1 of them (face: between cell i and cell i+1)
+    @inbounds for i in  1:(nx - 1)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
+        phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
+
+        rho_half     = gamma_mean(rho_l, rho_r, gamma)
+        rho_idx_l    = global_dof(i, 1, nvars)
+        rho_idx_r    = global_dof(i + 1, 1, nvars)
+
+        flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
+        f = (dt / dx) * gamma_ars * flux_semi_imp
+
+        cache.u[rho_idx_l] += f
+        cache.u[rho_idx_r] -= f
+    end
+
+    # Boundary face(s)
+    if periodic
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+        phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+
+        rho_half     = gamma_mean(rho_l, rho_r, gamma)
+        rho_idx_l    = global_dof(nx, 1, nvars)
+        rho_idx_r    = global_dof(1, 1, nvars)
+
+        flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
+
+        f = (dt / dx) * gamma_ars * flux_semi_imp
+
+        cache.u[rho_idx_r] -= f
+        cache.u[rho_idx_l] += f
+    else
+        # left boundary
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        phi_gl        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
+        phi_1        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+
+        rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
+        rho_idx_1  = global_dof(1, 1, nvars)
+
+        flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
+        f = (dt / dx) * gamma_ars * flux_semi_imp_l
+
+        cache.u[rho_idx_1] -= f
+
+        # right boundary
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right)
+        phi_nx        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+        phi_gr        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
+
+        rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
+
+        flux_semi_imp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
+        rho_idx_nx  = global_dof(nx, 1, nvars)
+        f = (dt / dx) * gamma_ars * flux_semi_imp_r
+
+        cache.u[rho_idx_nx] += f
+    end
+end
 
 end # @muladd
