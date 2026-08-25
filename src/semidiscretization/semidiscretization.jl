@@ -56,19 +56,19 @@ end
 
 Parameters passed to the Newton solver for the elliptic implicit equation.
 
-The `rho`, `eta` and `dt` fields are used by the IMEX scheme to add the
+The `u`, `eta` and `dt` fields are used by the IMEX scheme to add the
 per-cell `η dt² ρ̄ⁿ_{i±1/2}` corrections to the constant-coefficient
 Laplacian stencil. They hold references (no copies) to the hyperbolic
-density state and the current timestep/diffusion coefficient; when they
-are left at their initial values (`rho = 0`, `eta = 0`, `dt = 0`) the
+state and the current timestep/diffusion coefficient; when they
+are left at their initial values (`u = 0`, `eta = 0`, `dt = 0`) the
 assembly reduces to the plain `laplacian_coeff` Laplacian, which is the
 behavior used by the initial-condition solve.
 """
-mutable struct NewtonParameters{TRhs, TCoeff, TTime, TRho <: AbstractVector, TEta, TDt}
+mutable struct NewtonParameters{TRhs, TCoeff, TTime, TU <: AbstractVector, TEta, TDt}
     rhs::TRhs
     laplacian_coeff::TCoeff
     t::TTime
-    rho::TRho
+    u::TU
     eta::TEta
     dt::TDt
 end
@@ -88,7 +88,7 @@ function create_newton_cache(mesh::CartesianMesh)
     T = eltype(mesh.dx)
 
     # Create initial parameters struct (will be updated during solve).
-    # `rho` is typed as `AbstractVector{T}` so it can hold a `SubArray`
+    # `u` is typed as `AbstractVector{T}` so it can hold a `SubArray`
     # reference to the IMEX hyperbolic state `cache.u` (a view into the
     # block-layout state) without copying. Its initial zero value keeps the
     # initial-condition solve on the plain `laplacian_coeff` Laplacian.
@@ -357,6 +357,9 @@ end
 @inline ndofs(mesh::AbstractMesh) = ncells(mesh)
 
 @inline global_dof(cell::Int, var::Int, nvars::Int) = (cell - 1) * nvars + var
+
+# Convenience method for 1D Cartesian indices
+@inline global_dof(I::CartesianIndex{1}, var::Int, nvars::Int) = global_dof(I[1], var, nvars)
 
 # Select the right-hand side function corresponding to the semidiscretization `semi`.
 @inline default_rhs(::AbstractSemidiscretization) = rhs!

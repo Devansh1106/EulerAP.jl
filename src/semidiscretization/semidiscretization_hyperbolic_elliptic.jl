@@ -181,8 +181,8 @@ end
 end
 
 @inline function _elliptic_var(x_elliptic,
+                               semi::SemidiscretizationHyperbolicElliptic,
                                I::CartesianIndex{NDIMS},
-                               semi,
                                t) where {NDIMS}
 
     i = cell_index(I, semi)

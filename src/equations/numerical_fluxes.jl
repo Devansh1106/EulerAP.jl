@@ -223,4 +223,39 @@ end
     )
 end
 
+"""
+    explicit_density_flux(rho_l, rho_r, vel_l, vel_r, gamma)
+
+Explicit part of density flux used in the explicit correction stage of the IMEX scheme,
+
+    F̂ = ρ̄ (u_l + u_r)/2,
+
+where ρ̄ is the γ-mean of the left and right densities.
+"""
+@inline function explicit_density_flux(vel_l,
+                                       vel_r,
+                                       rho_half)
+
+    return rho_half * 0.5 * (vel_l + vel_r)
+end
+
+"""
+    semi_implicit_phi_flux(phi_l, phi_r, )
+
+Semi-implicit part of the density flux.
+"""
+@inline function semi_implicit_density_flux(phi_l,
+                                            phi_r,
+                                            rho_half,
+                                            eta,
+                                            dt, 
+                                            dx)
+    return -eta * dt * rho_half * (phi_r - phi_l) / dx
+end
+
+@inline function source_term_epb(phi_l, phi_r, rho_half)
+    return -0.5 * rho_half * (phi_r - phi_l)
+end
+
+
 end # @muladd
