@@ -14,7 +14,7 @@ Precompute the per-cell Laplacian coefficients
 
 used by both `assemble_nonlinear_residual!` and `assemble_nonlinear_jacobian!`.
 
-These depend only on `params.rho`, `params.eta`, `params.dt`, and
+These depend only on `params.u`, `params.eta`, `params.dt`, and
 `params.laplacian_coeff` — none of which change across the Newton
 iterations of a single elliptic solve (only `phi` does). Calling this once
 per `solve_newton!`, rather than recomputing `gamma_mean` and the density
@@ -40,12 +40,12 @@ function update_correction_coefficients!(cache, semi, params::NewtonParameters)
         return nothing
     end
 
-    rho      = params.rho
+    u        = params.u
     gamma    = semi.equations.gamma
     t        = params.t
     periodic = semi.boundary_conditions.left isa PeriodicBC
 
-    rho_at(I) = _hyperbolic_ghost_state(rho, I, semi, t)[1]
+    rho_at(I) = _hyperbolic_ghost_state(u, I, semi, t)[1]
 
     # rh[k] = gamma-mean density at the face to the LEFT of cell k, k=1..nx;
     # rh[nx+1] = face to the right of cell nx. One evaluation per interface.
@@ -113,15 +113,15 @@ function assemble_nonlinear_residual!(
 
         phi_l = _elliptic_var(
             phi,
-            Im1,
             semi,
+            Im1,
             t,
         )
 
         phi_r = _elliptic_var(
             phi,
-            Ip1,
             semi,
+            Ip1,
             t,
         )
 

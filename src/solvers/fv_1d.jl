@@ -234,8 +234,10 @@ end
                           t)
 
     x = coordinates(I, semi.mesh)
+    nvars = nvariables(semi.equations) 
+    sol = bc.boundary_value(x, t, semi.equations)
 
-    return bc.boundary_value(x, t, semi.equations)
+    return SVector{nvars}(ntuple(v -> sol[v], Val(nvars)))
 end
 
 @inline function apply_bc(bc::NeumannBC{1},
@@ -258,7 +260,7 @@ end
 
     dx = semi.mesh.dx[1]
 
-    return interior + dx * grad
+    return interior + dx * grad         # returns SVector
 end
 
 @inline function apply_bc(bc::MixedBC{1, N},
