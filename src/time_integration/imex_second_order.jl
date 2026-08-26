@@ -55,7 +55,7 @@ function perform_stage!(::ExplicitCorrectionStage1,
     reconstruct_slopes!(cache, semi, t)
 
     # for u^2_E
-    calculate_explicit_density_flux_diff_stage2(semi, cache)
+    calculate_explicit_density_flux_diff_stage2(semi, cache, t)
 
     @inbounds for i in 1:nx
         # rho_hat and no m_hat (its same as m_n)
@@ -160,7 +160,7 @@ function perform_stage!(::ExplicitCorrectionStage2,
     reconstruct_slopes!(cache, semi, t)
 
     # fill cache.rho_hat directly so no need of loop after this.
-    calculate_explicit_density_flux_diff_stage3(semi, cache, dt, coeffs.gamma_ars)
+    calculate_explicit_density_flux_diff_stage3(semi, cache, t, dt, coeffs.gamma_ars)
     return nothing
 end
 
@@ -282,8 +282,8 @@ function perform_stage!(::ImplicitCorrectionStage2,
 
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx-1)
-        u_l   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(i), :left)
-        u_r   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(i + 1), :right)
+        u_l   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(i), :left, t)
+        u_r   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(i + 1), :right, t)
         phi_l = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
         phi_r = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
@@ -292,17 +292,17 @@ function perform_stage!(::ImplicitCorrectionStage2,
 
     # Boundary face(s)
     if periodic
-        u_l   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left)
-        u_r   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right)
+        u_l   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left, t)
+        u_r   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right, t)
         phi_l = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_r = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
         apply_interface_momentum!(nx, 1, u_l, phi_l, u_r, phi_r)
     else
         # left boudnary
         Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-        u_gl = reconstructed_conservative_state_at(cache, semi, Ig_l, :left)
+        u_gl = reconstructed_conservative_state_at(cache, semi, Ig_l, :left, t)
         phi_gl = _elliptic_var(cache.phi, semi, Ig_l, t)
-        u_1    = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right)
+        u_1    = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right, t)
         phi_1  = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
         contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, orientation, equations, dt, dx, eta)
@@ -317,9 +317,9 @@ function perform_stage!(::ImplicitCorrectionStage2,
 
         # right boundary
         Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-        u_nx = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left)
+        u_nx = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left, t)
         phi_nx = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        u_gr   = reconstructed_conservative_state_at(cache, semi, Ig_r, :right)
+        u_gr   = reconstructed_conservative_state_at(cache, semi, Ig_r, :right, t)
         phi_gr = _elliptic_var(cache.phi, semi, Ig_r, t)
 
         contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, orientation, equations, dt, dx, eta)
@@ -604,8 +604,8 @@ end
     # for density flux
     # Interior faces: nx - 1 of them (face: between cell i and cell i+1)
     @inbounds for i in 1:(nx - 1)
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
@@ -623,8 +623,8 @@ end
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
         rho_half = gamma_mean(rho_l, rho_r, gamma)
@@ -638,8 +638,8 @@ end
         cache.semi_implicit_density_flux_diff_stage1[nx] += flux_semi_imp
         cache.semi_implicit_density_flux_diff_stage1[1]  -= flux_semi_imp
     else
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left, t)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_gl         = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
         phi_1         = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
         rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
@@ -650,8 +650,8 @@ end
         cache.explicit_density_flux_diff_stage1[1]      -= flux_exp_l
         cache.semi_implicit_density_flux_diff_stage1[1] -= flux_semi_imp_l
 
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right)
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right, t)
         phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_gr         = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
         rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
@@ -702,8 +702,8 @@ end
 
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx-1)
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
@@ -714,8 +714,8 @@ end
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -725,8 +725,8 @@ end
     else
         # left boundary face (ghost, cell 1): cell 1 receives it as its left face
         Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, Ig_l, :left)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, Ig_l, :left, t)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_gl         = _elliptic_var(cache.phi, semi, Ig_l, t)
         phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -735,8 +735,8 @@ end
 
         # right boundary face (cell nx, ghost): cell nx receives it as its right face
         Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, Ig_r, :right)
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, Ig_r, :right, t)
         phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
 
@@ -747,7 +747,7 @@ end
 
 
 # stage 2 helper functions
-@inline function calculate_explicit_density_flux_diff_stage2(semi::SemidiscretizationHyperbolicElliptic, cache)
+@inline function calculate_explicit_density_flux_diff_stage2(semi::SemidiscretizationHyperbolicElliptic, cache, t::T) where T
 
     equations = semi.equations
     mesh      = semi.mesh
@@ -760,8 +760,8 @@ end
     # for density flux
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx - 1)
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right, t)
 
         rho_half     = gamma_mean(rho_l, rho_r, gamma)
 
@@ -773,8 +773,8 @@ end
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
 
         rho_half = gamma_mean(rho_l, rho_r, gamma)
 
@@ -784,8 +784,8 @@ end
         cache.explicit_density_flux_diff_stage2[1]  -= flux_exp
     else
         # left boundary
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left, t)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
 
         rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
 
@@ -794,8 +794,8 @@ end
         cache.explicit_density_flux_diff_stage2[1] -= flux_exp_l
 
         # right boundary
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right)
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right, t)
 
         rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
@@ -818,8 +818,8 @@ end
 
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx-1)
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
@@ -830,8 +830,8 @@ end
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -841,8 +841,8 @@ end
     else
         # left boundary face (ghost, cell 1): cell 1 receives it as its left face
         Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, Ig_l, :left)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, Ig_l, :left, t)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_gl         = _elliptic_var(cache.phi, semi, Ig_l, t)
         phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -851,8 +851,8 @@ end
 
         # right boundary face (cell nx, ghost): cell nx receives it as its right face
         Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, Ig_r, :right)
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, Ig_r, :right, t)
         phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
 
@@ -876,8 +876,8 @@ end
 
     # Interior faces: nx - 1 of them (face: between cell i and cell i+1)
     @inbounds for i in  1:(nx - 1)
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
@@ -891,8 +891,8 @@ end
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -904,8 +904,8 @@ end
         cache.semi_implicit_density_flux_diff_stage2[nx] += flux_semi_imp
     else
         # left boundary
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left, t)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_gl        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
         phi_1        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -917,8 +917,8 @@ end
         cache.semi_implicit_density_flux_diff_stage2[1] -= flux_semi_imp_l
 
         # right boundary
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right)
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right, t)
         phi_nx        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_gr        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
 
@@ -1109,7 +1109,7 @@ end
 
 
 # helper function for explicit part involving rho^3_E and u^3_E
-@inline function calculate_explicit_density_flux_diff_stage3(semi::SemidiscretizationHyperbolicElliptic, cache, dt::T, gamma_ars::T) where T 
+@inline function calculate_explicit_density_flux_diff_stage3(semi::SemidiscretizationHyperbolicElliptic, cache, t::T, dt::T, gamma_ars::T) where T 
     
     equations = semi.equations
     mesh      = semi.mesh
@@ -1123,8 +1123,8 @@ end
     # for density flux
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx-1)
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right, t)
 
         rho_half     = gamma_mean(rho_l, rho_r, gamma)
 
@@ -1136,8 +1136,8 @@ end
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
 
         rho_half = gamma_mean(rho_l, rho_r, gamma)
 
@@ -1147,8 +1147,8 @@ end
         cache.rho_hat[1]  += f
     else
         # left boundary
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left, t)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
 
         rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
 
@@ -1158,8 +1158,8 @@ end
         cache.rho_hat[1] += f
 
         # right boundary
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right)
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right, t)
 
         rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
@@ -1186,8 +1186,8 @@ end
     dx  = mesh.dx[1]
     # Interior faces: nx - 1 of them (face: between cell i and cell i+1)
     @inbounds for i in  1:(nx - 1)
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(i + 1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(i), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
@@ -1204,8 +1204,8 @@ end
 
     # Boundary face(s)
     if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -1221,8 +1221,8 @@ end
         cache.u[rho_idx_l] -= f
     else
         # left boundary
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right)
+        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left, t)
+        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_gl        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
         phi_1        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
@@ -1235,8 +1235,8 @@ end
         cache.u[rho_idx_1] += f
 
         # right boundary
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right)
+        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), :right, t)
         phi_nx        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
         phi_gr        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
 
