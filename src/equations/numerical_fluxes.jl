@@ -253,9 +253,9 @@ Semi-implicit part of the density flux.
     return -eta * dt * rho_half * (phi_r - phi_l) / dx
 end
 
-@inline function source_term_epb(phi_l, phi_r, rho_half)
-    return -0.5 * rho_half * (phi_r - phi_l)
-end
+# @inline function source_term_epb(phi_l, phi_r, rho_half)
+#     return -0.5 * rho_half * (phi_r - phi_l)
+# end
 
 
 end # @muladd

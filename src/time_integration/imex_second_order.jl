@@ -595,7 +595,7 @@ end
     mesh      = semi.mesh
 
     gamma = equations.gamma
-    eta  = cache.eta
+    eta   = cache.eta
 
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
@@ -647,7 +647,7 @@ end
         flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
         flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
 
-        cache.explicit_density_flux_diff_stage1[1] -= flux_exp_l
+        cache.explicit_density_flux_diff_stage1[1]      -= flux_exp_l
         cache.semi_implicit_density_flux_diff_stage1[1] -= flux_semi_imp_l
 
         rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
@@ -659,7 +659,7 @@ end
         flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
         flux_semi_imp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
 
-        cache.explicit_density_flux_diff_stage1[nx] += flux_exp_r
+        cache.explicit_density_flux_diff_stage1[nx]      += flux_exp_r
         cache.semi_implicit_density_flux_diff_stage1[nx] += flux_semi_imp_r
     end
 end
@@ -708,8 +708,8 @@ end
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_l, vel_l, rho_r, vel_r, phi_l, phi_r)
-        cache.momentum_flux_diff_stage1[i]     += G + a
-        cache.momentum_flux_diff_stage1[i + 1] += -G + a
+        cache.momentum_flux_diff_stage1[i]     += G - a
+        cache.momentum_flux_diff_stage1[i + 1] += -G - a
     end
 
     # Boundary face(s)
@@ -720,8 +720,8 @@ end
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_l, vel_l, rho_r, vel_r, phi_l, phi_r)
-        cache.momentum_flux_diff_stage1[nx] += G + a
-        cache.momentum_flux_diff_stage1[1]  += -G + a
+        cache.momentum_flux_diff_stage1[nx] += G - a
+        cache.momentum_flux_diff_stage1[1]  += -G - a
     else
         # left boundary face (ghost, cell 1): cell 1 receives it as its left face
         Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
@@ -731,7 +731,7 @@ end
         phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_gl, vel_gl, rho_1, vel_1, phi_gl, phi_1)
-        cache.momentum_flux_diff_stage1[1] += -G + a
+        cache.momentum_flux_diff_stage1[1] += -G - a
 
         # right boundary face (cell nx, ghost): cell nx receives it as its right face
         Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
@@ -741,7 +741,7 @@ end
         phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_nx, vel_nx, rho_gr, vel_gr, phi_nx, phi_gr)
-        cache.momentum_flux_diff_stage1[nx] += G + a
+        cache.momentum_flux_diff_stage1[nx] += G - a
     end
 end
 
@@ -824,8 +824,8 @@ end
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(i + 1), t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_l, vel_l, rho_r, vel_r, phi_l, phi_r)
-        cache.momentum_flux_diff_stage2[i]     += G + a
-        cache.momentum_flux_diff_stage2[i + 1] += -G + a
+        cache.momentum_flux_diff_stage2[i]     += G - a
+        cache.momentum_flux_diff_stage2[i + 1] += -G - a
     end
 
     # Boundary face(s)
@@ -836,8 +836,8 @@ end
         phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_l, vel_l, rho_r, vel_r, phi_l, phi_r)
-        cache.momentum_flux_diff_stage2[nx] += G + a
-        cache.momentum_flux_diff_stage2[1]  += -G + a
+        cache.momentum_flux_diff_stage2[nx] += G - a
+        cache.momentum_flux_diff_stage2[1]  += -G - a
     else
         # left boundary face (ghost, cell 1): cell 1 receives it as its left face
         Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
@@ -847,7 +847,7 @@ end
         phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_gl, vel_gl, rho_1, vel_1, phi_gl, phi_1)
-        cache.momentum_flux_diff_stage2[1] += -G + a
+        cache.momentum_flux_diff_stage2[1] += -G - a
 
         # right boundary face (cell nx, ghost): cell nx receives it as its right face
         Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
@@ -857,7 +857,7 @@ end
         phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
 
         G, a = face_momentum_flux(gamma, eta, dt, dx, rho_nx, vel_nx, rho_gr, vel_gr, phi_nx, phi_gr)
-        cache.momentum_flux_diff_stage2[nx] += G + a
+        cache.momentum_flux_diff_stage2[nx] += G - a
     end
 end
 
@@ -885,8 +885,8 @@ end
 
         flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
 
-        cache.semi_implicit_density_flux_diff_stage2[i]     -= flux_semi_imp
-        cache.semi_implicit_density_flux_diff_stage2[i + 1] += flux_semi_imp
+        cache.semi_implicit_density_flux_diff_stage2[i]     += flux_semi_imp
+        cache.semi_implicit_density_flux_diff_stage2[i + 1] -= flux_semi_imp
     end
 
     # Boundary face(s)
@@ -900,8 +900,8 @@ end
 
         flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
 
-        cache.semi_implicit_density_flux_diff_stage2[1]  += flux_semi_imp
-        cache.semi_implicit_density_flux_diff_stage2[nx] -= flux_semi_imp
+        cache.semi_implicit_density_flux_diff_stage2[1]  -= flux_semi_imp
+        cache.semi_implicit_density_flux_diff_stage2[nx] += flux_semi_imp
     else
         # left boundary
         rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
@@ -914,7 +914,7 @@ end
         flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
 
         
-        cache.semi_implicit_density_flux_diff_stage2[1] += flux_semi_imp_l
+        cache.semi_implicit_density_flux_diff_stage2[1] -= flux_semi_imp_l
 
         # right boundary
         rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
@@ -926,7 +926,7 @@ end
 
         flux_semi_exp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
         
-        cache.semi_implicit_density_flux_diff_stage2[nx] -= flux_semi_exp_r
+        cache.semi_implicit_density_flux_diff_stage2[nx] += flux_semi_exp_r
     end
 end
 
@@ -1129,9 +1129,9 @@ end
         rho_half     = gamma_mean(rho_l, rho_r, gamma)
 
         flux_exp     = explicit_density_flux(vel_l, vel_r, rho_half)
-        f = (dt / dx) * gamma_ars * flux_exp
-        cache.rho_hat[i]     += f
-        cache.rho_hat[i + 1] -= f
+        f            = (dt / dx) * gamma_ars * flux_exp
+        cache.rho_hat[i]     -= f
+        cache.rho_hat[i + 1] += f
     end
 
     # Boundary face(s)
@@ -1143,8 +1143,8 @@ end
 
         flux_exp = explicit_density_flux(vel_l, vel_r, rho_half)
         f = (dt / dx) * gamma_ars * flux_exp
-        cache.rho_hat[nx]     += f
-        cache.rho_hat[1]      -= f
+        cache.rho_hat[nx] -= f
+        cache.rho_hat[1]  += f
     else
         # left boundary
         rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
@@ -1155,7 +1155,7 @@ end
         flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
         f = (dt / dx) * gamma_ars * flux_exp_l
 
-        cache.rho_hat[1] -= flux_exp_l
+        cache.rho_hat[1] += f
 
         # right boundary
         rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
@@ -1166,7 +1166,7 @@ end
         flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
         f = (dt / dx) * gamma_ars * flux_exp_r
 
-        cache.rho_hat[nx] += flux_exp_r
+        cache.rho_hat[nx] -= f
     end
 end
 
@@ -1198,8 +1198,8 @@ end
         flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
         f = (dt / dx) * gamma_ars * flux_semi_imp
 
-        cache.u[rho_idx_l] += f
-        cache.u[rho_idx_r] -= f
+        cache.u[rho_idx_l] -= f
+        cache.u[rho_idx_r] += f
     end
 
     # Boundary face(s)
@@ -1217,8 +1217,8 @@ end
 
         f = (dt / dx) * gamma_ars * flux_semi_imp
 
-        cache.u[rho_idx_r] -= f
-        cache.u[rho_idx_l] += f
+        cache.u[rho_idx_r] += f
+        cache.u[rho_idx_l] -= f
     else
         # left boundary
         rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), :left)
@@ -1232,7 +1232,7 @@ end
         flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
         f = (dt / dx) * gamma_ars * flux_semi_imp_l
 
-        cache.u[rho_idx_1] -= f
+        cache.u[rho_idx_1] += f
 
         # right boundary
         rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left)
@@ -1246,7 +1246,7 @@ end
         rho_idx_nx  = global_dof(nx, 1, nvars)
         f = (dt / dx) * gamma_ars * flux_semi_imp_r
 
-        cache.u[rho_idx_nx] += f
+        cache.u[rho_idx_nx] -= f
     end
 end
 
