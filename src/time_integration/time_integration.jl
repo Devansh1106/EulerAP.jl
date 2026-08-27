@@ -422,10 +422,20 @@ end
 @inline function reconstructed_rho_vel_at(cache,
                                           semi,
                                           I,
-                                          side,)
+                                          side,
+                                          t,)
     equations = semi.equations
     dx        = semi.mesh.dx[1]
     nvars     = nvariables(equations)
+
+    # Ghost cell (DirichletBC/MixedBC ghosts keep their out-of-range index):
+    # resolve through the BC machinery on the same array reconstruction
+    # operates on; no slope correction is defined for BC-provided ghost states.
+    if !(1 <= I[1] <= size(semi.mesh, 1))
+        s   = cell_state(cache.u_reconstructed, I, semi, t)
+        rho = s[1]
+        return rho, s[2] / rho
+    end
 
     rho_idx = global_dof(I, 1, nvars)
     vel_idx = global_dof(I, 2, nvars)   # cache.slopes here is now a velocity slope
@@ -446,9 +456,16 @@ end
 # Reconstructed *conservative* state (ρ, m) at the given side of cell I.
 # Unlike `reconstructed_rho_vel_at` (which returns (ρ, vel)), this returns the
 # state layout expected by `solver.flux`.
-@inline function reconstructed_conservative_state_at(cache, semi, I, side)
+@inline function reconstructed_conservative_state_at(cache, semi, I, side, t)
     nvars = nvariables(semi.equations)
     dx    = semi.mesh.dx[1]
+
+    # Ghost cell (DirichletBC/MixedBC ghosts keep their out-of-range index):
+    # resolve through the BC machinery on the same array reconstruction
+    # operates on; no slope correction is defined for BC-provided ghost states.
+    if !(1 <= I[1] <= size(semi.mesh, 1))
+        return cell_state(cache.u_reconstructed, I, semi, t)
+    end
 
     rho_idx = global_dof(I, 1, nvars)
     vel_idx = global_dof(I, 2, nvars)   # cache.slopes here is now a velocity slope
