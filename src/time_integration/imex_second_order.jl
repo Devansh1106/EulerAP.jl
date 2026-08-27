@@ -930,6 +930,12 @@ end
     end
 end
 
+# (ρ, v) primitive pair from a conservative (ρ, m) cell state, used so that
+# slope-limiting/reconstruction happens on velocity rather than momentum
+# (avoids amplifying independent ρ- and m-slope mismatches into large
+# spurious velocities where ρ is small, e.g. near-vacuum tails).
+@inline rho_vel(u) = (u[1], u[2] / u[1])
+
 @inline function reconstruct_slopes!(cache,
                                      semi,
                                      t;
@@ -973,15 +979,15 @@ end
                 t,
             )
 
-            for v in 1:nvars
+            rho_l, vel_l = rho_vel(u_l)
+            rho_c, vel_c = rho_vel(u_c)
+            rho_r, vel_r = rho_vel(u_r)
 
-                ΔL = (u_c[v] - u_l[v]) / dx
-                ΔR = (u_r[v] - u_c[v]) / dx
+            rho_idx = global_dof(I, 1, nvars)
+            vel_idx = global_dof(I, 2, nvars)   # same slot; now a velocity slope
 
-                idx = global_dof(I, v, nvars)
-
-                cache.slopes[idx] = limiter(ΔL, ΔR)
-            end
+            cache.slopes[rho_idx] = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
+            cache.slopes[vel_idx] = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
         end
 
 
@@ -1033,15 +1039,15 @@ end
             )
         end
 
-        for v in 1:nvars
+        rho_l, vel_l = rho_vel(u_l)
+        rho_c, vel_c = rho_vel(u_c)
+        rho_r, vel_r = rho_vel(u_r)
 
-            ΔL = (u_c[v] - u_l[v]) / dx
-            ΔR = (u_r[v] - u_c[v]) / dx
+        rho_idx = global_dof(I, 1, nvars)
+        vel_idx = global_dof(I, 2, nvars)
 
-            idx = global_dof(I, v, nvars)
-
-            cache.slopes[idx] = limiter(ΔL, ΔR)
-        end
+        cache.slopes[rho_idx] = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
+        cache.slopes[vel_idx] = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
 
 
         # ==========================================================
@@ -1092,15 +1098,15 @@ end
             )
         end
 
-        for v in 1:nvars
+        rho_l, vel_l = rho_vel(u_l)
+        rho_c, vel_c = rho_vel(u_c)
+        rho_r, vel_r = rho_vel(u_r)
 
-            ΔL = (u_c[v] - u_l[v]) / dx
-            ΔR = (u_r[v] - u_c[v]) / dx
+        rho_idx = global_dof(I, 1, nvars)
+        vel_idx = global_dof(I, 2, nvars)
 
-            idx = global_dof(I, v, nvars)
-
-            cache.slopes[idx] = limiter(ΔL, ΔR)
-        end
+        cache.slopes[rho_idx] = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
+        cache.slopes[vel_idx] = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
     end
 
     return nothing

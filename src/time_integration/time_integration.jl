@@ -428,17 +428,16 @@ end
     nvars     = nvariables(equations)
 
     rho_idx = global_dof(I, 1, nvars)
-    m_idx   = global_dof(I, 2, nvars)
+    vel_idx = global_dof(I, 2, nvars)   # cache.slopes here is now a velocity slope
 
     sgn = side === :left ? 1.0 : -1.0
 
-    rho = cache.u_reconstructed[rho_idx] +
-          sgn * 0.5 * dx * cache.slopes[rho_idx]
+    rho_c = cache.u_reconstructed[rho_idx]
+    m_c   = cache.u_reconstructed[vel_idx]
+    vel_c = m_c / rho_c
 
-    m = cache.u_reconstructed[m_idx] +
-        sgn * 0.5 * dx * cache.slopes[m_idx]
-
-    vel = m / rho
+    rho = rho_c + sgn * 0.5 * dx * cache.slopes[rho_idx]
+    vel = vel_c + sgn * 0.5 * dx * cache.slopes[vel_idx]
 
     return rho, vel
 end
@@ -452,14 +451,18 @@ end
     dx    = semi.mesh.dx[1]
 
     rho_idx = global_dof(I, 1, nvars)
-    m_idx   = global_dof(I, 2, nvars)
+    vel_idx = global_dof(I, 2, nvars)   # cache.slopes here is now a velocity slope
 
     sgn = side === :left ? 1.0 : -1.0
 
-    rho = cache.u_reconstructed[rho_idx] + sgn * 0.5 * dx * cache.slopes[rho_idx]
-    m   = cache.u_reconstructed[m_idx]   + sgn * 0.5 * dx * cache.slopes[m_idx]
+    rho_c = cache.u_reconstructed[rho_idx]
+    m_c   = cache.u_reconstructed[vel_idx]
+    vel_c = m_c / rho_c
 
-    return SVector{2}(rho, m)
+    rho = rho_c + sgn * 0.5 * dx * cache.slopes[rho_idx]
+    vel = vel_c + sgn * 0.5 * dx * cache.slopes[vel_idx]
+
+    return SVector{2}(rho, rho * vel)
 end
 
 # Fill a preallocated u (hyperbolic block) from rho and m arrays
