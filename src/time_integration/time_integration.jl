@@ -419,6 +419,47 @@ end
     return SVector{2}(rho, s[2] / rho)
 end
 
+"""
+    reconstructed_ghost_rho_vel(cache, semi, I, side, t)
+
+Reconstructed `(rho, vel)` at the domain-facing edge of the ghost cell `I`
+(`I` outside `1:size(semi.mesh, 1)`), using **two** ghost cells: `I` itself
+and the next one further out (`I - 1`/`I + 1`, whichever continues away from
+the domain), plus the adjacent interior cell. This mirrors exactly how an
+interior cell's own slope is built from its two neighbors, so the ghost gets
+a proper minmod-limited slope instead of being treated as piecewise
+constant. `cell_state` resolves each of the three stencil points through the
+same `apply_bc` machinery regardless of how far outside the domain they are,
+so this works uniformly for `ExtrapolateBC`, `DirichletBC`, `NeumannBC` and
+`MixedBC` (never call this for `PeriodicBC`; `apply_bc` errors for it, and
+periodic ghosts should be resolved to their wrapped interior index before
+reaching here, as `reconstruct_slopes!` already does).
+"""
+@inline function reconstructed_ghost_rho_vel(cache, semi, I, side, t)
+    dx = semi.mesh.dx[1]
+
+    Il = CartesianIndex(I[1] - 1)
+    Ir = CartesianIndex(I[1] + 1)
+
+    u_l = cell_state(cache.u_reconstructed, Il, semi, t)
+    u_c = cell_state(cache.u_reconstructed, I,  semi, t)
+    u_r = cell_state(cache.u_reconstructed, Ir, semi, t)
+
+    rho_l, vel_l = u_l[1], u_l[2] / u_l[1]
+    rho_c, vel_c = u_c[1], u_c[2] / u_c[1]
+    rho_r, vel_r = u_r[1], u_r[2] / u_r[1]
+
+    slope_rho = minmod((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
+    slope_vel = minmod((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
+
+    sgn = side === :left ? 1.0 : -1.0
+
+    rho = rho_c + sgn * 0.5 * dx * slope_rho
+    vel = vel_c + sgn * 0.5 * dx * slope_vel
+
+    return rho, vel
+end
+
 @inline function reconstructed_rho_vel_at(cache,
                                           semi,
                                           I,
@@ -428,13 +469,11 @@ end
     dx        = semi.mesh.dx[1]
     nvars     = nvariables(equations)
 
-    # Ghost cell (DirichletBC/MixedBC ghosts keep their out-of-range index):
-    # resolve through the BC machinery on the same array reconstruction
-    # operates on; no slope correction is defined for BC-provided ghost states.
+    # Ghost cell: reconstruct its own slope from two ghost layers (see
+    # `reconstructed_ghost_rho_vel`) instead of returning the piecewise
+    # constant BC value.
     if !(1 <= I[1] <= size(semi.mesh, 1))
-        s   = cell_state(cache.u_reconstructed, I, semi, t)
-        rho = s[1]
-        return rho, s[2] / rho
+        return reconstructed_ghost_rho_vel(cache, semi, I, side, t)
     end
 
     rho_idx = global_dof(I, 1, nvars)
@@ -460,11 +499,12 @@ end
     nvars = nvariables(semi.equations)
     dx    = semi.mesh.dx[1]
 
-    # Ghost cell (DirichletBC/MixedBC ghosts keep their out-of-range index):
-    # resolve through the BC machinery on the same array reconstruction
-    # operates on; no slope correction is defined for BC-provided ghost states.
+    # Ghost cell: reconstruct its own slope from two ghost layers (see
+    # `reconstructed_ghost_rho_vel`) instead of returning the piecewise
+    # constant BC value.
     if !(1 <= I[1] <= size(semi.mesh, 1))
-        return cell_state(cache.u_reconstructed, I, semi, t)
+        rho, vel = reconstructed_ghost_rho_vel(cache, semi, I, side, t)
+        return SVector{2}(rho, rho * vel)
     end
 
     rho_idx = global_dof(I, 1, nvars)
@@ -503,6 +543,13 @@ function solve(semi,
                integrator::IMEXIntegrator;
             #    dt = 0.0,
                dt = minimum_cell_size(semi.mesh),
+               # Accepted (but unused: the IMEX schemes pick their own step
+               # from a CFL condition every iteration) so that generic
+               # callers like `convergence_test`, written against
+               # `ImplicitEulerCustom`'s `solve`, also work with an
+               # `IMEXIntegrator`.
+               abstol = nothing,
+               reltol = nothing,
                callbacks=CallbackSet())
 
     return solve_imex(semi,

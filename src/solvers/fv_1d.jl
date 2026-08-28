@@ -258,7 +258,10 @@ end
                                 t,
                                 semi.equations)
 
-    dx = semi.mesh.dx[1]
+    # Distance from the interior cell used to the ghost cell `I`, so this
+    # stays correct for a second (or further) ghost layer, not just the one
+    # immediately adjacent to the domain.
+    dx = semi.mesh.dx[1] * abs(I[1] - interior_i)
 
     return interior + dx * grad         # returns SVector
 end
