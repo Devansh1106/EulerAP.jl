@@ -159,6 +159,7 @@ export initial_condition_shock_tube
 export initial_condition_seven_branch
 export initial_condition_plasma_expansion
 export make_initial_condition_soliton
+export make_soliton_solution
 
 # Source terms
 export source_terms

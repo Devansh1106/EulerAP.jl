@@ -130,4 +130,39 @@ function make_initial_condition_soliton(u0, eta)
     return ic, L
 end
 
+"""
+    make_soliton_solution(u0, eta)
+
+Exact time-dependent solution for the EPB soliton test case (Sect. 5.1 of
+Degond, Liu, Savelief & Vignal, J. Sci. Comput. 2012). The soliton is a
+travelling wave that keeps its shape and speed `u0` exactly, so its state at
+time `t` is just the `t = 0` profile — density, momentum and potential —
+translated by `u0 * t` and wrapped periodically onto `[0, L]` (see their
+Eq. (5.1)).
+
+Returns `(exact_solution, L)`: `L` is the domain length on which the profile
+is (numerically) periodic, as returned by `solve_soliton_profile`, and
+`exact_solution(x, t, semi)` matches the signature expected by
+`compute_errors`/`convergence_test` for a `SemidiscretizationHyperbolicElliptic`,
+returning `(rho, m, phi)`.
+"""
+function make_soliton_solution(u0, eta)
+    L, xs, phis = solve_soliton_profile(u0, eta)
+    ns, u_lab = soliton_density_velocity(phis, u0)
+    dx = xs[2] - xs[1]
+    x_range = xs[1]:dx:xs[end]
+    ns_interp  = scale(interpolate(ns, BSpline(Cubic(Periodic(OnGrid())))), x_range)
+    u_interp   = scale(interpolate(u_lab, BSpline(Cubic(Periodic(OnGrid())))), x_range)
+    phi_interp = scale(interpolate(phis, BSpline(Cubic(Periodic(OnGrid())))), x_range)
+    exact_solution = @inline function (x, t, semi)
+        RealT = eltype(x)
+        xw  = mod(x[1] - u0 * t, L)
+        rho = ns_interp(xw)
+        u   = u_interp(xw)
+        phi = phi_interp(xw)
+        return SVector(RealT(rho), RealT(rho * u), RealT(phi))
+    end
+    return exact_solution, L
+end
+
 end # @muladd
