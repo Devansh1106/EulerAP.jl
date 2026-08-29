@@ -116,7 +116,8 @@ semi = SemidiscretizationHyperbolicElliptic(
 
 # IMEX integrator with first-order 3-stage scheme
 integrator = IMEXIntegrator(
-    FirstOrderThreeStagesIMEX()
+    # FirstOrderThreeStagesIMEX()
+    SecondOrderFiveStagesIMEX()
 )
 
 # --------------------------------------------------
@@ -140,10 +141,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_initial_second.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_$(lambda).h5"
+    "euler_poisson_boltzmann_1d_five_branch_$(mesh_str)_$(lambda)_second.h5"
 
 # --------------------------------------------------
 # Save initial condition

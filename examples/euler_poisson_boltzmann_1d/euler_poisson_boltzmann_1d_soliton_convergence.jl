@@ -66,9 +66,12 @@ end
 
 t_L = L / u0   # time for the soliton to cross the whole periodic domain
 
+# Small grid sizes and a short tspan (t_L/20 rather than a full domain
+# crossing) — keeps this test fast to iterate on; the CFL-limited IMEX
+# schemes here get expensive fast at N >= 400-800.
 convergence_test(
     make_semi,
-    [1000, 2000, 4000],
+    [200, 400, 800, 1600],
     (0.0, t_L / 5),
     # IMEXIntegrator(FirstOrderThreeStagesIMEX());
     IMEXIntegrator(SecondOrderFiveStagesIMEX());

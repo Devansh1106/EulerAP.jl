@@ -61,8 +61,8 @@ function barenblatt(x, t, Γ, γ)
     return ρ
 end
 
-function exact_solution_barenblatt(x, t, equations)
-    gamma = equations.gamma
+function exact_solution_barenblatt(x, t, semi)
+    gamma = semi.equations.gamma
     ρ = barenblatt(x[1], t, 1.0, gamma)
     β = 1.0 / (gamma + 1.0)
     u = β * x[1] / t

@@ -7,48 +7,48 @@ using EulerAP
 # It writes the minimum density at every time step to a file whose name
 # embeds the lambda of the run, e.g. min_rho_five_branch_1.0.txt.
 
-mutable struct MinRhoCallback <: EulerAP.AbstractCallback
-    filename::String
-    io::Union{Nothing, IOStream}
-end
+# mutable struct MinRhoCallback <: EulerAP.AbstractCallback
+#     filename::String
+#     io::Union{Nothing, IOStream}
+# end
 
-MinRhoCallback(filename::String) = MinRhoCallback(filename, nothing)
+# MinRhoCallback(filename::String) = MinRhoCallback(filename, nothing)
 
-function EulerAP.initialize!(callback::MinRhoCallback,
-                             context::EulerAP.CallbackContext)
-    callback.io = open(callback.filename, "w")
-    println(callback.io, "t  dt  min_rho")
-    return nothing
-end
+# function EulerAP.initialize!(callback::MinRhoCallback,
+#                              context::EulerAP.CallbackContext)
+#     callback.io = open(callback.filename, "w")
+#     println(callback.io, "t  dt  min_rho")
+#     return nothing
+# end
 
-function EulerAP.perform!(callback::MinRhoCallback,
-                          context::EulerAP.CallbackContext;
-                          force = false)
-    if callback.io === nothing
-        callback.io = open(callback.filename, "w")
-        println(callback.io, "t  dt  min_rho")
-    end
-    stats = context.stats
-    println(callback.io, stats.time, "  ", stats.dt, "  ", stats.minimum_density)
-    flush(callback.io)
-    return nothing
-end
+# function EulerAP.perform!(callback::MinRhoCallback,
+#                           context::EulerAP.CallbackContext;
+#                           force = false)
+#     if callback.io === nothing
+#         callback.io = open(callback.filename, "w")
+#         println(callback.io, "t  dt  min_rho")
+#     end
+#     stats = context.stats
+#     println(callback.io, stats.time, "  ", stats.dt, "  ", stats.minimum_density)
+#     flush(callback.io)
+#     return nothing
+# end
 
-function EulerAP.finalize!(callback::MinRhoCallback,
-                           context::EulerAP.CallbackContext)
-    if callback.io !== nothing
-        close(callback.io)
-        callback.io = nothing
-    end
-    return nothing
-end
+# function EulerAP.finalize!(callback::MinRhoCallback,
+#                            context::EulerAP.CallbackContext)
+#     if callback.io !== nothing
+#         close(callback.io)
+#         callback.io = nothing
+#     end
+#     return nothing
+# end
 
 # --------------------------------------------------
 # Mesh
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (9000,),
+    (100,),
     (-80.0,),
     (100.0,)
     # periodicity = (true,) # For hyperbolic part only
@@ -118,6 +118,7 @@ semi = SemidiscretizationHyperbolicElliptic(
 # IMEX integrator with first-order 3-stage scheme
 integrator = IMEXIntegrator(
     FirstOrderThreeStagesIMEX()
+    # SecondOrderFiveStagesIMEX()
 )
 
 # --------------------------------------------------
@@ -129,7 +130,7 @@ callbacks = CallbackSet(
     PerformanceCallback(),
     SummaryCallback(),
     AnalysisCallback(interval=4),
-    MinRhoCallback("min_rho_riemann_$(lambda).txt")
+    # MinRhoCallback("min_rho_riemann_$(lambda).txt")
 )
 
 # --------------------------------------------------

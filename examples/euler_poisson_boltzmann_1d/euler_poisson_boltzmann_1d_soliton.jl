@@ -3,22 +3,22 @@ using EulerAP
 
 u0, eta = 1.2, -1e-6 # parameters required for soliton test case calculation
 initial_condition_soliton, L = make_initial_condition_soliton(u0, eta)
-
+exact_solution_soliton, _    = make_soliton_solution(u0, eta)
 # --------------------------------------------------
 # Mesh
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (100,),
+    (2000,),
     (0.0,),
     (L,),
     periodicity = (true,) # For hyperbolic part only
 )
 lambda = 1e0
 t = L/u0
-t_L = t/5.0
+# t_L = t/5.0
 # t_L = (2.0*t)/5.0
-# t_L = t
+t_L = t
 tspan = (0.0, t_L)
 
 # --------------------------------------------------
@@ -81,6 +81,7 @@ semi = SemidiscretizationHyperbolicElliptic(
 # IMEX integrator with first-order 3-stage scheme
 integrator = IMEXIntegrator(
     FirstOrderThreeStagesIMEX()
+    # SecondOrderFiveStagesIMEX()
 )
 
 # --------------------------------------------------
@@ -91,7 +92,7 @@ callbacks = CallbackSet(
     AliveCallback(interval=20),
     PerformanceCallback(),
     SummaryCallback(),
-    AnalysisCallback(interval=20)
+    AnalysisCallback(exact_solution = exact_solution_soliton)
 )
 
 # --------------------------------------------------
