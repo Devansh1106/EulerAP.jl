@@ -1,0 +1,175 @@
+using EulerAP
+
+# --------------------------------------------------
+# Temporary: per-timestep minimum density output
+# --------------------------------------------------
+# This is a temporary setup local to this script (no library changes).
+# It writes the minimum density at every time step to a file whose name
+# embeds the lambda of the run, e.g. min_rho_five_branch_1.0.txt.
+
+# mutable struct MinRhoCallback <: EulerAP.AbstractCallback
+#     filename::String
+#     io::Union{Nothing, IOStream}
+# end
+
+# MinRhoCallback(filename::String) = MinRhoCallback(filename, nothing)
+
+# function EulerAP.initialize!(callback::MinRhoCallback,
+#                              context::EulerAP.CallbackContext)
+#     callback.io = open(callback.filename, "w")
+#     println(callback.io, "t  dt  min_rho")
+#     return nothing
+# end
+
+# function EulerAP.perform!(callback::MinRhoCallback,
+#                           context::EulerAP.CallbackContext;
+#                           force = false)
+#     if callback.io === nothing
+#         callback.io = open(callback.filename, "w")
+#         println(callback.io, "t  dt  min_rho")
+#     end
+#     stats = context.stats
+#     println(callback.io, stats.time, "  ", stats.dt, "  ", stats.minimum_density)
+#     flush(callback.io)
+#     return nothing
+# end
+
+# function EulerAP.finalize!(callback::MinRhoCallback,
+#                            context::EulerAP.CallbackContext)
+#     if callback.io !== nothing
+#         close(callback.io)
+#         callback.io = nothing
+#     end
+#     return nothing
+# end
+
+# --------------------------------------------------
+# Mesh
+# --------------------------------------------------
+
+mesh = CartesianMesh(
+    (10000,),
+    (-10.0,),
+    (40.0,)
+    # periodicity = (true,) # For hyperbolic part only
+)
+lambda = 1e-2
+# tspan = (0.0, 0.010)
+tspan = (0.0, 3.0)
+
+# --------------------------------------------------
+# Equations
+# --------------------------------------------------
+
+# Hyperbolic: pressure-less Euler
+equations_hyperbolic = EulerPressureLess1D(
+    gamma = 1.4
+)
+
+# Elliptic: Poisson-Boltzmann
+equations_elliptic = PoissonBoltzmann(
+    lambda = lambda
+)
+
+# --------------------------------------------------
+# Solver
+# --------------------------------------------------
+
+solver = FVSolver(
+    flux = FluxEnergyStable(0.0), #0.0 is dummy; it will be overwritten inside by calculating η at every time step
+    ndims = 1
+)
+
+# --------------------------------------------------
+# Boundary conditions
+# --------------------------------------------------
+
+boundary_conditions = (
+    BoundaryConditions1D(
+        MixedBC{1}(ExtrapolateBC{1}(), DirichletBC{1}((x, t, eq) -> (0.0, 0.0))),
+        ExtrapolateBC{1}()
+    ),
+    # elliptic case 1D (periodic)
+    BoundaryConditions1D(
+        ExtrapolateBC{1}(),
+        ExtrapolateBC{1}()
+    )
+)
+
+# --------------------------------------------------
+# Semidiscretization
+# --------------------------------------------------
+
+semi = SemidiscretizationHyperbolicElliptic(
+    mesh,
+    (equations_hyperbolic, equations_elliptic),
+    initial_condition_plasma_expansion,
+    solver; # solver_elliptic is default to NewtonRaphson() from NLS
+    source_terms = source_terms_hyperbolic,
+    source_terms_elliptic = nothing, # elliptic source term is internally constructed for this system
+    boundary_conditions = boundary_conditions # tuple for hyperbolic and elliptic cases
+)
+
+# --------------------------------------------------
+# Time integration
+# --------------------------------------------------
+
+# IMEX integrator with first-order 3-stage scheme
+integrator = IMEXIntegrator(
+    FirstOrderThreeStagesIMEX()
+)
+
+# --------------------------------------------------
+# Callbacks
+# --------------------------------------------------
+
+callbacks = CallbackSet(
+    AliveCallback(interval=4),
+    PerformanceCallback(),
+    SummaryCallback(),
+    AnalysisCallback(interval=4),
+    # MinRhoCallback("min_rho_five_branch_$(lambda).txt")
+)
+
+# --------------------------------------------------
+# Output
+# --------------------------------------------------
+
+OUTPUT_DIR = "data_new"
+
+mesh_str = join(mesh.cells_per_dimension, "x")
+
+initial_filename =
+    "euler_poisson_boltzmann_1d_plasma_expansion_$(mesh_str)_initial.h5"
+
+solution_filename =
+    "euler_poisson_boltzmann_1d_plasma_expansion_$(mesh_str)_$(lambda).h5"
+
+# --------------------------------------------------
+# Save initial condition
+# --------------------------------------------------
+
+save_initial_condition(
+    semi,
+    joinpath(OUTPUT_DIR, initial_filename);
+    t = first(tspan)
+)
+
+# --------------------------------------------------
+# Solve
+# --------------------------------------------------
+
+sol = solve(semi,
+            tspan,
+            integrator;
+            callbacks = callbacks)
+
+# --------------------------------------------------
+# Save final solution
+# --------------------------------------------------
+
+save_solution(
+    sol,
+    semi,
+    joinpath(OUTPUT_DIR, solution_filename)
+)

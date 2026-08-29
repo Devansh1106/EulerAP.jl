@@ -26,3 +26,6 @@ out_relaxation/
 err_relaxation/
 plots/
 data/
+plots_new/
+data_new/
+out/
