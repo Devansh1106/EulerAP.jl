@@ -55,6 +55,29 @@ function convergence_table(cells,
 end
 
 """
+    convergence_table(cells, results, names)
+
+Print one convergence table per variable, labelled with `names` (e.g. from
+`variable_names(semi)`). This is the standard way convergence is reported in
+the literature (see e.g. Tables 1-3 of Degond, Liu, Savelief & Vignal,
+J. Sci. Comput. 2012): each conserved variable gets its own error/EOC
+column, since different variables (here e.g. density vs. potential) need not
+converge at the same observed rate.
+"""
+function convergence_table(cells,
+                           results,
+                           names)
+
+    for (variable, name) in enumerate(names)
+        println()
+        println("Variable: ", name)
+        convergence_table(cells, results; variable = variable)
+    end
+
+    return nothing
+end
+
+"""
     convergence_test(semi_builder, grid_sizes, tspan, integrator;
                      exact_solution, dt = nothing,
                      abstol = 1e-8, reltol = 1e-8)
@@ -64,7 +87,11 @@ Run a convergence test by solving at multiple grid resolutions.
 - `semi_builder`: a function `N -> semidiscretization` that creates a problem for grid size N
 - `grid_sizes`: array of grid sizes (e.g., [100, 200, 400])
 - `tspan`, `integrator`: passed to `solve()`
-- `exact_solution`: passed to `compute_errors()`
+- `exact_solution`: passed to `compute_errors()`, called as `exact_solution(x, t, semi)`
+  regardless of `semi`'s type — see `compute_errors`
+
+Prints one convergence table per variable (see `convergence_table`), labelled
+via `variable_names(semi)`.
 """
 function convergence_test(semi_builder, grid_sizes, tspan, integrator;
                           exact_solution, dt = nothing,
@@ -73,6 +100,7 @@ function convergence_test(semi_builder, grid_sizes, tspan, integrator;
     results = AnalysisResult[]
     cells = Int[]
 
+    semi = nothing
     for N in grid_sizes
         semi = semi_builder(N)
         dt_actual = dt === nothing ? minimum(semi.mesh.dx) : dt
@@ -85,7 +113,7 @@ function convergence_test(semi_builder, grid_sizes, tspan, integrator;
         push!(cells, ndofs(semi.mesh))
     end
 
-    convergence_table(cells, results)
+    convergence_table(cells, results, variable_names(semi))
     return results
 end
 

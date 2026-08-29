@@ -145,6 +145,13 @@ is (numerically) periodic, as returned by `solve_soliton_profile`, and
 `exact_solution(x, t, semi)` matches the signature expected by
 `compute_errors`/`convergence_test` for a `SemidiscretizationHyperbolicElliptic`,
 returning `(rho, m, phi)`.
+
+Sign convention note: `solve_soliton_profile`/`sagdeev_rhs` follow the paper's
+own scaled potential (Boltzmann relation `n = e^{-φ}`, their Eq. (2.10)), but
+`PoissonBoltzmann`'s residual (`assemble_nonlinear_residual!`,
+`elliptic_point_source = exp`) solves `λ²Δφ = e^{φ} - ρ`, i.e. this codebase's
+`φ` is the *negative* of the paper's. `phis` is therefore negated below so
+`exact_solution`'s potential matches what the solver actually produces.
 """
 function make_soliton_solution(u0, eta)
     L, xs, phis = solve_soliton_profile(u0, eta)
@@ -159,7 +166,7 @@ function make_soliton_solution(u0, eta)
         xw  = mod(x[1] - u0 * t, L)
         rho = ns_interp(xw)
         u   = u_interp(xw)
-        phi = phi_interp(xw)
+        phi = -phi_interp(xw)   # see sign convention note above
         return SVector(RealT(rho), RealT(rho * u), RealT(phi))
     end
     return exact_solution, L

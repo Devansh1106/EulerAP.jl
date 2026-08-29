@@ -6,12 +6,32 @@
 #! format: noindent
 
 """
+    variable_names(semi)
+
+Per-variable labels, in the same order `compute_errors` reports norms in.
+For a coupled `SemidiscretizationHyperbolicElliptic` this is
+`vcat(varnames(semi.equations), varnames(semi.equations_elliptic))` — the
+elliptic part always comes last, so it always ends in the elliptic
+equation's own name(s) (`"Potential"` for `PoissonBoltzmann`).
+"""
+@inline variable_names(semi::AbstractSemidiscretization) = varnames(semi.equations)
+@inline variable_names(semi::SemidiscretizationHyperbolicElliptic) =
+    (varnames(semi.equations)..., varnames(semi.equations_elliptic)...)
+
+"""
     compute_errors(solution,
                    semi;
                    exact_solution)
 
 Compute the discrete L¹, L² and L∞ error norms for every conserved
 variable.
+
+`exact_solution` is always called as `exact_solution(x, t, semi)` — the same
+signature for every `semi` subtype (including `SemidiscretizationHyperbolicElliptic`,
+below), so a function written against one kind of semidiscretization doesn't
+silently receive the wrong third argument when reused with another. Pull
+whatever you need (`semi.equations`, `semi.mesh.dx`, ...) out of `semi`
+inside the function.
 """
 function compute_errors(solution,
                         semi::AbstractSemidiscretization;
@@ -45,7 +65,7 @@ function compute_errors(solution,
         exact = exact_solution(
             x,
             solution.t,
-            equations
+            semi
         )
 
         @inbounds for v in 1:nvars
@@ -69,6 +89,15 @@ function compute_errors(solution,
     return AnalysisResult(norms)
 end
 
+"""
+    compute_errors(solution,
+                   semi::SemidiscretizationHyperbolicElliptic;
+                   exact_solution)
+
+As above, but for the coupled hyperbolic-elliptic case: `exact_solution(x, t, semi)`
+must return one value per variable in `vcat(hyperbolic state, elliptic state)`
+order, i.e. `(rho, m, phi)` for the EPB system.
+"""
 function compute_errors(solution,
                         semi::SemidiscretizationHyperbolicElliptic;
                         exact_solution)
