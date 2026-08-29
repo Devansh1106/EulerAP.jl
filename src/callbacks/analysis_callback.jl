@@ -10,6 +10,9 @@
 
 Compute error norms against an exact solution.
 
+`exact_solution` is forwarded to `compute_errors` and so is always called as
+`exact_solution(x, t, semi)`, regardless of `semi`'s type — see `compute_errors`.
+
 By default, the analysis is performed only once at the final time.
 """
 struct AnalysisCallback{F} <: AbstractCallback
@@ -53,9 +56,11 @@ function perform!(callback::AnalysisCallback,
             exact_solution = callback.exact_solution,
         )
 
+        names = variable_names(simulation.semi)
+
         for (variable, norms) in enumerate(result.norms)
 
-            println("Variable ", variable)
+            println(names[variable])
 
             print_summary_line("L¹", norms.L1)
             print_summary_line("L²", norms.L2)

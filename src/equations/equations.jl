@@ -8,6 +8,16 @@
 # Retrieve number of variables from equation instance
 @inline nvariables(::AbstractEquations{NDIMS, NVARS}) where {NDIMS, NVARS} = NVARS
 
+"""
+    varnames(equations)
+
+Human-readable name for each variable in `equations`, in the same order as
+its state vector. Falls back to generic "Variable i" labels for any
+`equations` type without a more specific method (added below, next to each
+concrete equations type).
+"""
+@inline varnames(equations::AbstractEquations) = ntuple(v -> "Variable $v", nvariables(equations))
+
 # ============================================================================
 # Combined hyperbolic-elliptic equations
 # ============================================================================
@@ -35,6 +45,9 @@ include("relaxation_euler/relaxation_euler_2d.jl")
 @inline Base.show(io::IO, ::RelaxationEulerEquations1D) = print(io, "Relaxation Euler equations (1D)")
 @inline Base.show(io::IO, ::RelaxationEulerEquations2D) = print(io, "Relaxation Euler equations (2D)")
 
+@inline varnames(::RelaxationEulerEquations1D) = ("Density", "Momentum")
+@inline varnames(::RelaxationEulerEquations2D) = ("Density", "x-Momentum", "y-Momentum")
+
 
 # ----------------------------------------------------------------------------
 # Euler-Pressure-Less
@@ -48,6 +61,9 @@ include("euler_poisson_boltzmann/euler_pressure_less_2d.jl")
 
 @inline Base.show(io::IO, ::EulerPressureLess1D) = print(io, "Euler-Pressure-Less equations (1D)")
 @inline Base.show(io::IO, ::EulerPressureLess2D) = print(io, "Euler-Pressure-Less equations (2D)")
+
+@inline varnames(::EulerPressureLess1D) = ("Density", "Momentum")
+@inline varnames(::EulerPressureLess2D) = ("Density", "x-Momentum", "y-Momentum")
 
 
 # ============================================================================
@@ -63,5 +79,7 @@ abstract type AbstractPoissonBoltzmannEquations{NDIMS, NVARS} <:
 include("euler_poisson_boltzmann/euler_poisson_boltzmann.jl")
 
 @inline Base.show(io::IO, ::PoissonBoltzmann) = print(io, "Poisson-Boltzmann equation (1D)")
+
+@inline varnames(::PoissonBoltzmann) = ("Potential",)
 
 end # @muladd
