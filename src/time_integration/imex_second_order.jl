@@ -951,7 +951,7 @@ end
 @inline function reconstruct_slopes!(cache,
                                      semi,
                                      t;
-                                     limiter = minmod,)
+                                     limiter = cache.limiter,)
     mesh      = semi.mesh
     equations = semi.equations
 
@@ -1035,17 +1035,13 @@ end
 
         else
 
-            # Ghost cell supplied by the BC machinery
-            Ighost = neighbor_index(
-                I,
-                semi,
-                1,
-                -1,
-            )
-
+            # Ghost cell supplied by the BC machinery. The index is used
+            # directly rather than via `neighbor_index`, which clamps back
+            # into the domain for `NeumannBC`/`ExtrapolateBC` and would hand
+            # back cell 1's own state instead of the BC-provided ghost.
             u_l = cell_state(
                 cache.u_reconstructed,
-                Ighost,
+                CartesianIndex(0),
                 semi,
                 t,
             )
@@ -1094,17 +1090,11 @@ end
 
         else
 
-            # Ghost cell supplied by the BC machinery
-            Ighost = neighbor_index(
-                I,
-                semi,
-                1,
-                1,
-            )
-
+            # Ghost cell supplied by the BC machinery; see the note on the
+            # left boundary for why `neighbor_index` is bypassed here.
             u_r = cell_state(
                 cache.u_reconstructed,
-                Ighost,
+                CartesianIndex(nx + 1),
                 semi,
                 t,
             )

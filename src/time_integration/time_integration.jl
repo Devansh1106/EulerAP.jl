@@ -149,7 +149,7 @@ Cache storing the intermediate solution states required by an IMEX second order 
 The cache owns only algorithmic states. Solver-specific workspaces
 (e.g. Newton residuals, Jacobians) are owned by the `EllipticCache`(@ref).
 """
-mutable struct IMEXCacheSecondOrder{TU, TW, TP, TR, TE}
+mutable struct IMEXCacheSecondOrder{TU, TW, TP, TR, TE, TL}
     u::TU           # current solution u^n
     u_reconstructed::TW   # reconstructed state used for slope-limited interfaces
     rho_hat::TR     # intermediate states
@@ -167,9 +167,11 @@ mutable struct IMEXCacheSecondOrder{TU, TW, TP, TR, TE}
     semi_implicit_density_flux_diff_stage2::TR      # storing semi implicit density flux differences for re-use
     momentum_flux_diff_stage2::TR
     slopes::TW
+    limiter::TL     # slope limiter; single source of truth for interior *and*
+                    # ghost-cell slopes (see `reconstructed_ghost_rho_vel`)
 end
 
-function IMEXCacheSecondOrder(u0::TU, phi0::TP) where {TU, TP}
+function IMEXCacheSecondOrder(u0::TU, phi0::TP; limiter = minmod) where {TU, TP}
     T = eltype(u0)
     IMEXCacheSecondOrder(u0,
                         similar(u0),            # u_reconstructed
@@ -186,7 +188,8 @@ function IMEXCacheSecondOrder(u0::TU, phi0::TP) where {TU, TP}
                         similar(phi0),          # explicit_density_flux_diff_stage2
                         similar(phi0),          # semi_implicit_density_flux_diff_stage2
                         similar(phi0),          # momentum_flux_diff_stage2
-                        similar(u0),)           # slopes
+                        similar(u0),            # slopes
+                        limiter,)
 end
 
 # ============================================================================
@@ -427,8 +430,9 @@ Reconstructed `(rho, vel)` at the domain-facing edge of the ghost cell `I`
 and the next one further out (`I - 1`/`I + 1`, whichever continues away from
 the domain), plus the adjacent interior cell. This mirrors exactly how an
 interior cell's own slope is built from its two neighbors, so the ghost gets
-a proper minmod-limited slope instead of being treated as piecewise
-constant. `cell_state` resolves each of the three stencil points through the
+a properly limited slope instead of being treated as piecewise constant;
+the limiter is `cache.limiter`, the same one `reconstruct_slopes!` uses for
+interior cells. `cell_state` resolves each of the three stencil points through the
 same `apply_bc` machinery regardless of how far outside the domain they are,
 so this works uniformly for `ExtrapolateBC`, `DirichletBC`, `NeumannBC` and
 `MixedBC` (never call this for `PeriodicBC`; `apply_bc` errors for it, and
@@ -449,8 +453,10 @@ reaching here, as `reconstruct_slopes!` already does).
     rho_c, vel_c = u_c[1], u_c[2] / u_c[1]
     rho_r, vel_r = u_r[1], u_r[2] / u_r[1]
 
-    slope_rho = minmod((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
-    slope_vel = minmod((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
+    limiter = cache.limiter
+
+    slope_rho = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
+    slope_vel = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
 
     sgn = side === :left ? 1.0 : -1.0
 
