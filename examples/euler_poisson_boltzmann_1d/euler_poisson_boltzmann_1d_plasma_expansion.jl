@@ -119,6 +119,22 @@ integrator = IMEXIntegrator(
     FirstOrderThreeStagesIMEX()
 )
 
+# Slope limiter used by the second-order scheme's reconstruction. Choices:
+#
+#   minmod              default; classical minmod, TVD
+#   nolimiter           plain central slope (Uᵢ₊₁ - Uᵢ₋₁) / (2Δx); no limiting
+#                       at all — second order, but not TVD, so it can oscillate
+#                       and lose positivity of ρ on discontinuous data
+#   MinmodTheta(θ)      generalized minmod, θ ∈ [1, 2]; θ = 1 reduces to
+#                       `minmod`, θ = 2 is the most compressive TVD choice
+#   CWENO(ε)            nonlinear φ-weighted average of the one-sided slopes,
+#                       φ(s) = (ε + s²)⁻², default ε = 1e-6
+#
+# The parameterized ones are structs and always need the parentheses, even for
+# their defaults: `MinmodTheta()`, `CWENO()`. Ignored by the first-order scheme,
+# which reconstructs nothing.
+limiter = minmod
+
 # --------------------------------------------------
 # Callbacks
 # --------------------------------------------------
@@ -162,6 +178,7 @@ save_initial_condition(
 sol = solve(semi,
             tspan,
             integrator;
+            limiter = limiter,
             callbacks = callbacks)
 
 # --------------------------------------------------
