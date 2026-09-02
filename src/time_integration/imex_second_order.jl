@@ -340,11 +340,18 @@ end
 """
     solve_imex(semi::AbstractSemidiscretization,
                integrator::IMEXIntegrator,
-               tspan;
+               tspan,
+               scheme::SecondOrderFiveStagesIMEX;
                dt,
+               limiter = minmod,
                callbacks = CallbackSet())
 
 Advance the semidiscretization using an IMEX time integrator.
+
+`limiter` is stored in the cache and is the single source of truth for both
+interior and ghost-cell slopes (see `reconstruct_slopes!` and
+`reconstructed_ghost_rho_vel`). Pass [`nolimiter`](@ref) for smooth
+convergence tests; see [`minmod`](@ref) for the default.
 """
 
 function solve_imex(semi::AbstractSemidiscretization,
@@ -352,6 +359,7 @@ function solve_imex(semi::AbstractSemidiscretization,
                     tspan,
                     scheme::SecondOrderFiveStagesIMEX;
                     dt,
+                    limiter = minmod,
                     callbacks = CallbackSet())
 
     t = first(tspan)
@@ -382,7 +390,8 @@ function solve_imex(semi::AbstractSemidiscretization,
 
     cache = IMEXCacheSecondOrder(
         u_hyper,
-        phi,
+        phi;
+        limiter = limiter,
     )
 
     iteration = 0

@@ -93,5 +93,33 @@ end
     return SVector{2}(rho, zero(rho))
 end
 
+"""
+    manufactured_ic(x, t, equations::EulerPressureLess1D)
+
+Smooth, strictly positive periodic initial condition on [0, 1]:
+
+    ρ(0, x) = 1 + 0.1 sin(2πx)
+    v(0, x) = 0.1 cos(2πx)
+
+returned as the conservative state (ρ, ρv). Both profiles are 1-periodic, so
+this pairs with periodic boundary conditions on the unit interval.
+
+ρ stays in [0.9, 1.1], well away from vacuum, and every derivative is bounded,
+which makes this the right initial state for measuring the experimental order
+of convergence of the second-order scheme: there is no discontinuity for the
+slope limiter to clip (see `nolimiter`) and no near-vacuum region to stress
+positivity.
+
+The initial potential is *not* set here — as for every initial condition of
+this coupled system, φ(0, ·) is obtained by solving -λ²Δφ + e^φ = ρ(0, ·) in
+`initial_condition(t, semi::SemidiscretizationHyperbolicElliptic)`.
+"""
+@inline function manufactured_ic(x, t, equations::EulerPressureLess1D)
+    RealT = eltype(x)
+    rho = one(RealT) + RealT(0.1) * sin(2 * π * x[1])
+    v   = RealT(0.1) * cos(2 * π * x[1])
+    return SVector{2}(rho, rho * v)
+end
+
 
 end # @muladd

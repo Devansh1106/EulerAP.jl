@@ -228,7 +228,8 @@ end
 """
     solve_imex(semi::AbstractSemidiscretization,
                integrator::IMEXIntegrator,
-               tspan;
+               tspan,
+               scheme::FirstOrderThreeStagesIMEX;
                dt,
                callbacks = CallbackSet())
 
@@ -240,6 +241,11 @@ function solve_imex(semi::AbstractSemidiscretization,
                     tspan,
                     scheme::FirstOrderThreeStagesIMEX;
                     dt,
+                    # Accepted (but unused: this scheme is piecewise constant
+                    # in space and reconstructs no slopes) so that a limiter
+                    # choice can be passed to `solve`/`convergence_test`
+                    # without knowing which IMEX scheme is in use.
+                    limiter = nothing,
                     callbacks = CallbackSet())
 
     t = first(tspan)

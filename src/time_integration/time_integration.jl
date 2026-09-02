@@ -40,6 +40,11 @@ function solve(semi,
                dt = minimum_cell_size(semi.mesh),
                abstol = 1e-8,
                reltol = 1e-8,
+               # Accepted (but unused: this scheme is first order in space and
+               # reconstructs nothing) so that generic callers like
+               # `convergence_test`, which forward a limiter choice to every
+               # integrator, also work with `ImplicitEulerCustom`.
+               limiter = nothing,
                callbacks=CallbackSet())
 
     return solve_implicit_euler(semi,
@@ -540,9 +545,14 @@ end
 
 """
     solve(semi, tspan, integrator::IMEXIntegrator;
-          dt, callbacks=CallbackSet())
+          dt, limiter = minmod, callbacks=CallbackSet())
 
 Advance the semidiscretization using the IMEX solver.
+
+`limiter` selects the slope limiter used by the second-order scheme's
+reconstruction — [`minmod`](@ref) (default) or [`nolimiter`](@ref) for
+unlimited central slopes, which is what a smooth convergence/EOC test wants.
+It is ignored by the first-order scheme, which reconstructs nothing.
 """
 function solve(semi,
                tspan,
@@ -556,6 +566,7 @@ function solve(semi,
                # `IMEXIntegrator`.
                abstol = nothing,
                reltol = nothing,
+               limiter = minmod,
                callbacks=CallbackSet())
 
     return solve_imex(semi,
@@ -563,6 +574,7 @@ function solve(semi,
                       tspan,
                       integrator.scheme;
                       dt = dt,
+                      limiter = limiter,
                       callbacks=callbacks)
 end
 end # @muladd

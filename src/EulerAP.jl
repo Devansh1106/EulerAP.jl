@@ -89,6 +89,7 @@ include("postprocessing/postprocessing.jl")
 include("postprocessing/norms.jl")
 include("postprocessing/errors.jl")
 include("postprocessing/convergence.jl")
+include("postprocessing/self_convergence.jl")
 
 # --------------------------------------------------
 # Exports
@@ -111,6 +112,14 @@ export FluxEnergyStable
 # Solvers
 export FVSolver
 export EllipticSolver
+
+# Slope limiters
+export minmod
+export nolimiter
+export minmod_theta
+export MinmodTheta
+export cweno
+export CWENO
 
 # Boundary Conditions
 export BoundaryConditions1D
@@ -159,6 +168,7 @@ export initial_condition_shock_tube
 export initial_condition_seven_branch
 export initial_condition_plasma_expansion
 export make_initial_condition_soliton
+export manufactured_ic
 export make_soliton_solution
 
 # Source terms
@@ -173,6 +183,14 @@ export NewtonCache
 export compute_errors
 export convergence_table
 export convergence_test
+
+# Postprocessing — self-referenced (Cauchy) convergence
+export self_convergence_test
+export self_convergence_table
+export compute_errors_self
+export restrict_solution
+export errors_between
+export SelfConvergenceResult
 
 # Callbacks
 export CallbackSet
