@@ -90,6 +90,7 @@ include("postprocessing/norms.jl")
 include("postprocessing/errors.jl")
 include("postprocessing/convergence.jl")
 include("postprocessing/self_convergence.jl")
+include("postprocessing/ref_convergence.jl")
 
 # --------------------------------------------------
 # Exports
@@ -169,6 +170,7 @@ export initial_condition_seven_branch
 export initial_condition_plasma_expansion
 export make_initial_condition_soliton
 export manufactured_ic
+export smooth_ic
 export make_soliton_solution
 
 # Source terms
@@ -191,6 +193,14 @@ export compute_errors_self
 export restrict_solution
 export errors_between
 export SelfConvergenceResult
+
+# Postprocessing — fixed fine reference solution as the "exact" one
+export ref_convergence_test
+export ref_convergence_table
+export compute_errors_reference
+export restrict_to_reference_grid
+export reference_factors
+export RefConvergenceResult
 
 # Callbacks
 export CallbackSet

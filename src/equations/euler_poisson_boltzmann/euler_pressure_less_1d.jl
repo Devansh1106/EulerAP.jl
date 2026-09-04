@@ -121,5 +121,38 @@ this coupled system, φ(0, ·) is obtained by solving -λ²Δφ + e^φ = ρ(0, �
     return SVector{2}(rho, rho * v)
 end
 
+"""
+    smooth_ic(x, t, equations::EulerPressureLess1D)
+
+Smooth, strictly positive initial condition — a shallow density depression at
+rest, meant for the domain [-10, 10]:
+
+    ρ(0, x) = 1 - 0.3 sech(2x)
+    v(0, x) = 0
+
+returned as the conservative state (ρ, ρv); a zero velocity means a zero
+momentum component.
+
+ρ stays in [0.7, 1], well away from vacuum, and every derivative is bounded, so
+this is a valid state for measuring the experimental order of convergence of
+the second-order scheme: nothing for the slope limiter to clip (see
+`nolimiter`) and no near-vacuum region to stress positivity.
+
+The bump is localised — sech(2·10) ≈ 4e-9 — so on [-10, 10] the data is
+periodic to well below any discretization error and pairs with periodic
+boundary conditions, even though the profile is not periodic analytically.
+Used on a much shorter interval it would introduce a jump at the domain edges.
+
+The initial potential is *not* set here — as for every initial condition of
+this coupled system, φ(0, ·) is obtained by solving -λ²Δφ + e^φ = ρ(0, ·) in
+`initial_condition(t, semi::SemidiscretizationHyperbolicElliptic)`.
+"""
+@inline function smooth_ic(x, t, equations::EulerPressureLess1D)
+    RealT = eltype(x)
+    rho = one(RealT) - RealT(0.3) * sech(2 * x[1])
+    v   = zero(RealT)
+    return SVector{2}(rho, rho * v)
+end
+
 
 end # @muladd

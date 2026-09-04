@@ -79,10 +79,10 @@ function perform_stage!(
     λ = semi.equations_elliptic.lambda
 
     # assembly functions use these to add the
-    # per-cell η dt² ρ̄ⁿ_{i±1/2} corrections to the constant-coefficient
+    # per-cell η dt²*gamma_ars*ρ̄ⁿ_{i±1/2} corrections to the constant-coefficient
     # Laplacian stencil.
     params = semi.cache_elliptic.newton_cache.params
-    params.u = cache.u
+    params.u = cache.u_reconstructed    # since \bar{\rho} need \rho_exp
     params.eta = cache.eta * coeffs.gamma_ars
     params.dt  = dt
 
@@ -177,10 +177,10 @@ function perform_stage!(
     λ = semi.equations_elliptic.lambda
 
     # assembly functions use these to add the
-    # per-cell η dt² ρ̄ⁿ_{i±1/2} corrections to the constant-coefficient
+    # per-cell η dt² * gamma_ars * ρ̄ⁿ_{i±1/2} corrections to the constant-coefficient
     # Laplacian stencil.
     params = semi.cache_elliptic.newton_cache.params
-    params.u = cache.u
+    params.u = cache.u_reconstructed
     params.eta = cache.eta * coeffs.gamma_ars
     params.dt  = dt
 
@@ -258,8 +258,6 @@ function perform_stage!(::ImplicitCorrectionStage2,
     # there is no need to store the semi implicit density flux
     # u^3_E and reconstructed slopes are already there from last stages
     calculate_semi_implicit_density_flux_diff_stage3(semi, cache, t, dt, coeffs.gamma_ars)
-
-    # calculate_momentum_flux_diff_stage3(semi, cache, t, dt, coeffs.gamma_ars)
 
     # One `solver.flux` evaluation per interface, applied to both neighbors
     # (same pattern as the first-order `ImplicitCorrectionStage`).
@@ -363,7 +361,7 @@ function solve_imex(semi::AbstractSemidiscretization,
                     callbacks = CallbackSet())
 
     t = first(tspan)
-    gamma_ars = 1-sqrt(2)/2
+    gamma_ars = 1-(1/sqrt(2))
     delta_ars = 1-1/(2*gamma_ars)
     coeffs = ARS222(gamma_ars, delta_ars)
 
