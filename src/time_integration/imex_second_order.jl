@@ -116,13 +116,11 @@ function perform_stage!(::ExplicitCorrectionStage2,
 
     nvars = nvariables(equations)
     # gamma = equations.gamma
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # NOTE: EPB is 1D-only today (see the note on ImplicitPredictionStage
     # below), so this stage only ever runs for axis = 1 in practice.
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # u_reconstructed already contains rho_exp and m_exp
 
@@ -210,7 +208,6 @@ function perform_stage!(::ImplicitCorrectionStage2,
     eta = cache.eta
 
     nvars = nvariables(equations)
-    periodic = semi.boundary_conditions.left isa PeriodicBC
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
 
@@ -289,49 +286,41 @@ function perform_stage!(::ImplicitCorrectionStage2,
     end
 
     # Boundary face(s)
-    if periodic
-        u_l   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left, t)
-        u_r   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_l = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_r = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
-        apply_interface_momentum!(nx, 1, u_l, phi_l, u_r, phi_r)
-    else
-        # left boudnary (reconstructed, not piecewise-constant, hyperbolic
-        # ghost state; `phi_gl` stays on `neighbor_index` — it's a separate,
-        # first-order-only BC)
-        Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-        u_gl = reconstructed_conservative_state_at(cache, semi, CartesianIndex(0), :left, t)
-        phi_gl = _elliptic_var(cache.phi, semi, Ig_l, t)
-        u_1    = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_1  = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    # left boudnary (reconstructed, not piecewise-constant, hyperbolic
+    # ghost state; `phi_gl` stays on `neighbor_index` — it's a separate,
+    # first-order-only BC)
+    Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
+    u_gl = reconstructed_conservative_state_at(cache, semi, CartesianIndex(0), :left, t)
+    phi_gl = _elliptic_var(cache.phi, semi, Ig_l, t)
+    u_1    = reconstructed_conservative_state_at(cache, semi, CartesianIndex(1), :right, t)
+    phi_1  = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
-        contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, orientation, equations, dt, dx, eta)
+    contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, orientation, equations, dt, dx, eta)
 
-        # f_1 = (dt / dx) * coeffs.gamma_ars * contrib.flux[1]
-        g_1 = (dt / dx) * coeffs.gamma_ars * contrib.flux[2]
-        m_1 = (dt / 2) * coeffs.gamma_ars * contrib.source
+    # f_1 = (dt / dx) * coeffs.gamma_ars * contrib.flux[1]
+    g_1 = (dt / dx) * coeffs.gamma_ars * contrib.flux[2]
+    m_1 = (dt / 2) * coeffs.gamma_ars * contrib.source
 
-        m_1_idx = global_dof(1, 2, nvars)
-        cache.u[m_1_idx] += g_1
-        cache.u[m_1_idx] += m_1
+    m_1_idx = global_dof(1, 2, nvars)
+    cache.u[m_1_idx] += g_1
+    cache.u[m_1_idx] += m_1
 
-        # right boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
-        Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-        u_nx = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left, t)
-        phi_nx = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        u_gr   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx + 1), :right, t)
-        phi_gr = _elliptic_var(cache.phi, semi, Ig_r, t)
+    # right boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
+    Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
+    u_nx = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx), :left, t)
+    phi_nx = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+    u_gr   = reconstructed_conservative_state_at(cache, semi, CartesianIndex(nx + 1), :right, t)
+    phi_gr = _elliptic_var(cache.phi, semi, Ig_r, t)
 
-        contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, orientation, equations, dt, dx, eta)
+    contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, orientation, equations, dt, dx, eta)
 
-        g_2 = (dt / dx) * coeffs.gamma_ars * contrib.flux[2]
-        m_2 = (dt / 2) * coeffs.gamma_ars * contrib.source
+    g_2 = (dt / dx) * coeffs.gamma_ars * contrib.flux[2]
+    m_2 = (dt / 2) * coeffs.gamma_ars * contrib.source
 
 
-        m_nx_idx = global_dof(nx, 2, nvars)
-        cache.u[m_nx_idx]    -= g_2
-        cache.u[m_nx_idx]    += m_2 # source always gets added (- sign is taken care in the function itself)
-    end
+    m_nx_idx = global_dof(nx, 2, nvars)
+    cache.u[m_nx_idx]    -= g_2
+    cache.u[m_nx_idx]    += m_2 # source always gets added (- sign is taken care in the function itself)
     return nothing
 end
 
@@ -609,7 +598,6 @@ end
 
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # for density flux
     # Interior faces: nx - 1 of them (face: between cell i and cell i+1)
@@ -632,50 +620,33 @@ end
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
-        rho_half = gamma_mean(rho_l, rho_r, gamma)
+    # Reconstructed (not piecewise-constant) ghost state: cell 0 carries
+    # its own stored slope, built from the outer ghost layer — see
+    # `slope_dof`. The elliptic ghost (`phi_gl`) is a separate,
+    # first-order-only BC and is deliberately left on `neighbor_index`.
+    rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
+    rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    phi_gl         = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
+    phi_1         = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
 
-        flux_exp = explicit_density_flux(vel_l, vel_r, rho_half)
-        flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
+    flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
+    flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
 
-        cache.explicit_density_flux_diff_stage1[nx] += flux_exp
-        cache.explicit_density_flux_diff_stage1[1]  -= flux_exp
+    cache.explicit_density_flux_diff_stage1[1]      -= flux_exp_l
+    cache.semi_implicit_density_flux_diff_stage1[1] -= flux_semi_imp_l
 
-        cache.semi_implicit_density_flux_diff_stage1[nx] += flux_semi_imp
-        cache.semi_implicit_density_flux_diff_stage1[1]  -= flux_semi_imp
-    else
-        # Reconstructed (not piecewise-constant) ghost state: cell 0 carries
-        # its own stored slope, built from the outer ghost layer — see
-        # `slope_dof`. The elliptic ghost (`phi_gl`) is a separate,
-        # first-order-only BC and is deliberately left on `neighbor_index`.
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_gl         = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
-        phi_1         = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
-        rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
+    rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+    rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
+    phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+    phi_gr         = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
+    rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
-        flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
-        flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
+    flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
+    flux_semi_imp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
 
-        cache.explicit_density_flux_diff_stage1[1]      -= flux_exp_l
-        cache.semi_implicit_density_flux_diff_stage1[1] -= flux_semi_imp_l
-
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
-        phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_gr         = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
-        rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
-
-        flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
-        flux_semi_imp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
-
-        cache.explicit_density_flux_diff_stage1[nx]      += flux_exp_r
-        cache.semi_implicit_density_flux_diff_stage1[nx] += flux_semi_imp_r
-    end
+    cache.explicit_density_flux_diff_stage1[nx]      += flux_exp_r
+    cache.semi_implicit_density_flux_diff_stage1[nx] += flux_semi_imp_r
 end
 
 # Face momentum flux: conservative upwind part G of the total face density
@@ -712,7 +683,6 @@ end
 
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx-1)
@@ -727,39 +697,28 @@ end
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    # left boundary face (ghost, cell 1): cell 1 receives it as its left face.
+    # Reconstructed (not piecewise-constant) hyperbolic ghost state — see
+    # `slope_dof`; the elliptic ghost (`phi_gl`) is a
+    # separate, first-order-only BC and is deliberately left on `neighbor_index`.
+    Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
+    rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
+    rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    phi_gl         = _elliptic_var(cache.phi, semi, Ig_l, t)
+    phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
-        G, a = face_momentum_flux(gamma, eta, dt, dx, rho_l, vel_l, rho_r, vel_r, phi_l, phi_r)
-        cache.momentum_flux_diff_stage1[nx] += G - a
-        cache.momentum_flux_diff_stage1[1]  += -G - a
-    else
-        # left boundary face (ghost, cell 1): cell 1 receives it as its left face.
-        # Reconstructed (not piecewise-constant) hyperbolic ghost state — see
-        # `slope_dof`; the elliptic ghost (`phi_gl`) is a
-        # separate, first-order-only BC and is deliberately left on `neighbor_index`.
-        Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_gl         = _elliptic_var(cache.phi, semi, Ig_l, t)
-        phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    G, a = face_momentum_flux(gamma, eta, dt, dx, rho_gl, vel_gl, rho_1, vel_1, phi_gl, phi_1)
+    cache.momentum_flux_diff_stage1[1] += -G - a
 
-        G, a = face_momentum_flux(gamma, eta, dt, dx, rho_gl, vel_gl, rho_1, vel_1, phi_gl, phi_1)
-        cache.momentum_flux_diff_stage1[1] += -G - a
+    # right boundary face (cell nx, ghost): cell nx receives it as its right face
+    Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
+    rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+    rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
+    phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+    phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
 
-        # right boundary face (cell nx, ghost): cell nx receives it as its right face
-        Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
-        phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
-
-        G, a = face_momentum_flux(gamma, eta, dt, dx, rho_nx, vel_nx, rho_gr, vel_gr, phi_nx, phi_gr)
-        cache.momentum_flux_diff_stage1[nx] += G - a
-    end
+    G, a = face_momentum_flux(gamma, eta, dt, dx, rho_nx, vel_nx, rho_gr, vel_gr, phi_nx, phi_gr)
+    cache.momentum_flux_diff_stage1[nx] += G - a
 end
 
 
@@ -772,7 +731,6 @@ end
     gamma = equations.gamma
 
     nx       = size(mesh, 1)
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # for density flux
     # Interior faces: nx - 1 of them, between cell i and cell i+1
@@ -789,37 +747,25 @@ end
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    # left boundary (reconstructed, not piecewise-constant, ghost state)
+    rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
+    rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
 
-        rho_half = gamma_mean(rho_l, rho_r, gamma)
+    rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
 
-        flux_exp = explicit_density_flux(vel_l, vel_r, rho_half)
+    flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
 
-        cache.explicit_density_flux_diff_stage2[nx] += flux_exp
-        cache.explicit_density_flux_diff_stage2[1]  -= flux_exp
-    else
-        # left boundary (reconstructed, not piecewise-constant, ghost state)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    cache.explicit_density_flux_diff_stage2[1] -= flux_exp_l
 
-        rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
+    # right boundary (reconstructed, not piecewise-constant, ghost state)
+    rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+    rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
 
-        flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
+    rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
-        cache.explicit_density_flux_diff_stage2[1] -= flux_exp_l
+    flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
 
-        # right boundary (reconstructed, not piecewise-constant, ghost state)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
-
-        rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
-
-        flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
-
-        cache.explicit_density_flux_diff_stage2[nx] += flux_exp_r
-    end
+    cache.explicit_density_flux_diff_stage2[nx] += flux_exp_r
 end
 
 @inline function calculate_momentum_flux_diff_stage2(semi::SemidiscretizationHyperbolicElliptic, cache, t::T, dt::T) where T
@@ -831,7 +777,6 @@ end
 
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # Interior faces: nx - 1 of them, between cell i and cell i+1
     @inbounds for i in 1:(nx-1)
@@ -846,38 +791,27 @@ end
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    # left boundary face (ghost, cell 1): cell 1 receives it as its left face
+    # (reconstructed, not piecewise-constant, hyperbolic ghost state;
+    # `phi_gl` stays on `neighbor_index` — it's a separate, first-order-only BC)
+    Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
+    rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
+    rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    phi_gl         = _elliptic_var(cache.phi, semi, Ig_l, t)
+    phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
-        G, a = face_momentum_flux(gamma, eta, dt, dx, rho_l, vel_l, rho_r, vel_r, phi_l, phi_r)
-        cache.momentum_flux_diff_stage2[nx] += G - a
-        cache.momentum_flux_diff_stage2[1]  += -G - a
-    else
-        # left boundary face (ghost, cell 1): cell 1 receives it as its left face
-        # (reconstructed, not piecewise-constant, hyperbolic ghost state;
-        # `phi_gl` stays on `neighbor_index` — it's a separate, first-order-only BC)
-        Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_gl         = _elliptic_var(cache.phi, semi, Ig_l, t)
-        phi_1          = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    G, a = face_momentum_flux(gamma, eta, dt, dx, rho_gl, vel_gl, rho_1, vel_1, phi_gl, phi_1)
+    cache.momentum_flux_diff_stage2[1] += -G - a
 
-        G, a = face_momentum_flux(gamma, eta, dt, dx, rho_gl, vel_gl, rho_1, vel_1, phi_gl, phi_1)
-        cache.momentum_flux_diff_stage2[1] += -G - a
+    # right boundary face (cell nx, ghost): cell nx receives it as its right face
+    Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
+    rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+    rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
+    phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+    phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
 
-        # right boundary face (cell nx, ghost): cell nx receives it as its right face
-        Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
-        phi_nx         = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_gr         = _elliptic_var(cache.phi, semi, Ig_r, t)
-
-        G, a = face_momentum_flux(gamma, eta, dt, dx, rho_nx, vel_nx, rho_gr, vel_gr, phi_nx, phi_gr)
-        cache.momentum_flux_diff_stage2[nx] += G - a
-    end
+    G, a = face_momentum_flux(gamma, eta, dt, dx, rho_nx, vel_nx, rho_gr, vel_gr, phi_nx, phi_gr)
+    cache.momentum_flux_diff_stage2[nx] += G - a
 end
 
 @inline function calculate_semi_implicit_density_flux_diff_stage2(semi::SemidiscretizationHyperbolicElliptic, cache, t::T, dt::T) where T
@@ -888,7 +822,6 @@ end
     gamma = equations.gamma
 
     nx       = size(mesh, 1)
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     eta = cache.eta
     dx  = mesh.dx[1]
@@ -909,44 +842,30 @@ end
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    # left boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
+    rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
+    rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    phi_gl        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
+    phi_1        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
-        rho_half = gamma_mean(rho_l, rho_r, gamma)
+    rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
 
-        flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
-
-        cache.semi_implicit_density_flux_diff_stage2[1]  -= flux_semi_imp
-        cache.semi_implicit_density_flux_diff_stage2[nx] += flux_semi_imp
-    else
-        # left boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_gl        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
-        phi_1        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
-
-        rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
-
-        flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
+    flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
 
 
-        cache.semi_implicit_density_flux_diff_stage2[1] -= flux_semi_imp_l
+    cache.semi_implicit_density_flux_diff_stage2[1] -= flux_semi_imp_l
 
-        # right boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
-        phi_nx        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_gr        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
+    # right boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
+    rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+    rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
+    phi_nx        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+    phi_gr        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
 
-        rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
+    rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
-        flux_semi_exp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
+    flux_semi_exp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
 
-        cache.semi_implicit_density_flux_diff_stage2[nx] += flux_semi_exp_r
-    end
+    cache.semi_implicit_density_flux_diff_stage2[nx] += flux_semi_exp_r
 end
 
 # (ρ, v) primitive pair from a conservative (ρ, m) cell state, used so that
@@ -1014,7 +933,6 @@ end
 
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # for density flux
     # Interior faces: nx - 1 of them, between cell i and cell i+1
@@ -1031,39 +949,27 @@ end
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    # left boundary (reconstructed, not piecewise-constant, ghost state)
+    rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
+    rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
 
-        rho_half = gamma_mean(rho_l, rho_r, gamma)
+    rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
 
-        flux_exp = explicit_density_flux(vel_l, vel_r, rho_half)
-        f = (dt / dx) * gamma_ars * flux_exp
-        cache.rho_hat[nx] -= f
-        cache.rho_hat[1]  += f
-    else
-        # left boundary (reconstructed, not piecewise-constant, ghost state)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
+    f = (dt / dx) * gamma_ars * flux_exp_l
 
-        rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
+    cache.rho_hat[1] += f
 
-        flux_exp_l = explicit_density_flux(vel_gl, vel_1, rho_half_l)
-        f = (dt / dx) * gamma_ars * flux_exp_l
+    # right boundary (reconstructed, not piecewise-constant, ghost state)
+    rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+    rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
 
-        cache.rho_hat[1] += f
+    rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
-        # right boundary (reconstructed, not piecewise-constant, ghost state)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
+    flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
+    f = (dt / dx) * gamma_ars * flux_exp_r
 
-        rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
-
-        flux_exp_r = explicit_density_flux(vel_nx, vel_gr, rho_half_r)
-        f = (dt / dx) * gamma_ars * flux_exp_r
-
-        cache.rho_hat[nx] -= f
-    end
+    cache.rho_hat[nx] -= f
 end
 
 # helper function for explicit part involving phi^3_E
@@ -1076,7 +982,6 @@ end
 
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     eta = cache.eta
     dx  = mesh.dx[1]
@@ -1099,51 +1004,33 @@ end
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_r, vel_r = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_l        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_r        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    # left boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
+    rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
+    rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
+    phi_gl        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
+    phi_1        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
 
-        rho_half     = gamma_mean(rho_l, rho_r, gamma)
-        rho_idx_l    = global_dof(nx, 1, nvars)
-        rho_idx_r    = global_dof(1, 1, nvars)
+    rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
+    rho_idx_1  = global_dof(1, 1, nvars)
 
-        flux_semi_imp = semi_implicit_density_flux(phi_l, phi_r, rho_half, eta, dt, dx)
+    flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
+    f = (dt / dx) * gamma_ars * flux_semi_imp_l
 
-        f = (dt / dx) * gamma_ars * flux_semi_imp
+    cache.u[rho_idx_1] += f
 
-        cache.u[rho_idx_r] += f
-        cache.u[rho_idx_l] -= f
-    else
-        # left boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
-        rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
-        rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
-        phi_gl        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
-        phi_1        = _elliptic_var(cache.phi, semi, CartesianIndex(1), t)
+    # right boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
+    rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
+    rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
+    phi_nx        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
+    phi_gr        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
 
-        rho_half_l = gamma_mean(rho_gl, rho_1, gamma)
-        rho_idx_1  = global_dof(1, 1, nvars)
+    rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
 
-        flux_semi_imp_l = semi_implicit_density_flux(phi_gl, phi_1, rho_half_l, eta, dt, dx)
-        f = (dt / dx) * gamma_ars * flux_semi_imp_l
+    flux_semi_imp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
+    rho_idx_nx  = global_dof(nx, 1, nvars)
+    f = (dt / dx) * gamma_ars * flux_semi_imp_r
 
-        cache.u[rho_idx_1] += f
-
-        # right boundary (reconstructed, not piecewise-constant, hyperbolic ghost state)
-        rho_nx, vel_nx = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx), :left, t)
-        rho_gr, vel_gr = reconstructed_rho_vel_at(cache, semi, CartesianIndex(nx + 1), :right, t)
-        phi_nx        = _elliptic_var(cache.phi, semi, CartesianIndex(nx), t)
-        phi_gr        = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
-
-        rho_half_r = gamma_mean(rho_nx, rho_gr, gamma)
-
-        flux_semi_imp_r = semi_implicit_density_flux(phi_nx, phi_gr, rho_half_r, eta, dt, dx)
-        rho_idx_nx  = global_dof(nx, 1, nvars)
-        f = (dt / dx) * gamma_ars * flux_semi_imp_r
-
-        cache.u[rho_idx_nx] -= f
-    end
+    cache.u[rho_idx_nx] -= f
 end
 
 end # @muladd

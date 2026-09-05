@@ -32,7 +32,6 @@ function perform_stage!(
     # below), so this stage only ever runs for axis = 1 in practice.
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # Seed with ρⁿ; interface flux differences are subtracted below — one
     # `explicit_density_flux` evaluation per interface instead of two.
@@ -52,29 +51,19 @@ function perform_stage!(
     end
 
     # Boundary face(s)
-    if periodic
-        rho_l, vel_l = rho_vel_at(cache.u, cache.vel, semi, CartesianIndex(nx), t)
-        rho_r, vel_r = rho_vel_at(cache.u, cache.vel, semi, CartesianIndex(1), t)
-        rho_half = gamma_mean(rho_l, rho_r, gamma)
+    rho_gl, vel_gl = rho_vel_at(cache.u, cache.vel, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
+    rho_1,  vel_1  = rho_vel_at(cache.u, cache.vel, semi, CartesianIndex(1), t)
+    rho_half = gamma_mean(rho_gl, rho_1, gamma)
 
-        f = explicit_density_flux(vel_l, vel_r, rho_half)
-        cache.rho_hat[nx] -= (dt / dx) * f
-        cache.rho_hat[1]  += (dt / dx) * f
-    else
-        rho_gl, vel_gl = rho_vel_at(cache.u, cache.vel, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
-        rho_1,  vel_1  = rho_vel_at(cache.u, cache.vel, semi, CartesianIndex(1), t)
-        rho_half = gamma_mean(rho_gl, rho_1, gamma)
+    f_l = explicit_density_flux(vel_gl, vel_1, rho_half)
+    cache.rho_hat[1] += (dt / dx) * f_l
 
-        f_l = explicit_density_flux(vel_gl, vel_1, rho_half)
-        cache.rho_hat[1] += (dt / dx) * f_l
+    rho_nx, vel_nx = rho_vel_at(cache.u, cache.vel, semi, CartesianIndex(nx), t)
+    rho_gr, vel_gr = rho_vel_at(cache.u, cache.vel, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
+    rho_half = gamma_mean(rho_nx, rho_gr, gamma)
 
-        rho_nx, vel_nx = rho_vel_at(cache.u, cache.vel, semi, CartesianIndex(nx), t)
-        rho_gr, vel_gr = rho_vel_at(cache.u, cache.vel, semi, neighbor_index(CartesianIndex(nx), semi, 1, 1), t)
-        rho_half = gamma_mean(rho_nx, rho_gr, gamma)
-
-        f_r = explicit_density_flux(vel_nx, vel_gr, rho_half)
-        cache.rho_hat[nx] -= (dt / dx) * f_r
-    end
+    f_r = explicit_density_flux(vel_nx, vel_gr, rho_half)
+    cache.rho_hat[nx] -= (dt / dx) * f_r
 
     return nothing
 end
@@ -146,7 +135,6 @@ function perform_stage!(
     nx       = size(mesh, 1)
     dx       = mesh.dx[1]
     eta      = cache.eta
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
     # Stage starts from uⁿ. `cache.u` is only ever READ during the loop
     # below (never written), so it can be read directly — no need to copy
@@ -191,29 +179,23 @@ function perform_stage!(
     end
 
     # Boundary face(s)
-    if periodic
-        u_l, phi_l = state_phi(CartesianIndex(nx))
-        u_r, phi_r = state_phi(CartesianIndex(1))
-        apply_interface!(nx, 1, u_l, phi_l, u_r, phi_r)
-    else
-        Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-        u_gl, phi_gl = state_phi(Ig_l)
-        u_1,  phi_1  = state_phi(CartesianIndex(1))
-        contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, 1, equations, dt, dx, eta)
-        rho_1_idx, mom_1_idx = global_dof(1, 1, nvars), global_dof(1, 2, nvars)
-        write_state[rho_1_idx] += (dt / dx) * contrib.flux[1]
-        write_state[mom_1_idx] += (dt / dx) * contrib.flux[2]
-        write_state[mom_1_idx] += (dt / 2) * contrib.source
+    Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
+    u_gl, phi_gl = state_phi(Ig_l)
+    u_1,  phi_1  = state_phi(CartesianIndex(1))
+    contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, 1, equations, dt, dx, eta)
+    rho_1_idx, mom_1_idx = global_dof(1, 1, nvars), global_dof(1, 2, nvars)
+    write_state[rho_1_idx] += (dt / dx) * contrib.flux[1]
+    write_state[mom_1_idx] += (dt / dx) * contrib.flux[2]
+    write_state[mom_1_idx] += (dt / 2) * contrib.source
 
-        u_nx, phi_nx = state_phi(CartesianIndex(nx))
-        Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-        u_gr, phi_gr = state_phi(Ig_r)
-        contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, 1, equations, dt, dx, eta)
-        rho_nx_idx, mom_nx_idx = global_dof(nx, 1, nvars), global_dof(nx, 2, nvars)
-        write_state[rho_nx_idx] -= (dt / dx) * contrib.flux[1]
-        write_state[mom_nx_idx] -= (dt / dx) * contrib.flux[2]
-        write_state[mom_nx_idx] += (dt / 2) * contrib.source
-    end
+    u_nx, phi_nx = state_phi(CartesianIndex(nx))
+    Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
+    u_gr, phi_gr = state_phi(Ig_r)
+    contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, 1, equations, dt, dx, eta)
+    rho_nx_idx, mom_nx_idx = global_dof(nx, 1, nvars), global_dof(nx, 2, nvars)
+    write_state[rho_nx_idx] -= (dt / dx) * contrib.flux[1]
+    write_state[mom_nx_idx] -= (dt / dx) * contrib.flux[2]
+    write_state[mom_nx_idx] += (dt / 2) * contrib.source
 
     # NDIMS == 1, so the single sweep above is already the final state —
     # advance directly from `write_state`.

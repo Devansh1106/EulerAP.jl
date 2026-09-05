@@ -169,17 +169,6 @@ conditions stored in `semi.boundary_conditions_elliptic`.
     end
 end
 
-@inline function _hyperbolic_ghost_state(u_hyper, I::CartesianIndex{NDIMS}, semi, t) where {NDIMS}
-    side = boundary_side(I, semi)
-    if side !== nothing
-        bc = getproperty(semi.boundary_conditions, side)
-        if bc isa PeriodicBC
-            I = CartesianIndex(ntuple(d -> _wrap_index(I[d], size(semi.mesh, d)), NDIMS))
-        end
-    end
-    return cell_state(u_hyper, I, semi, t)
-end
-
 @inline function _elliptic_var(x_elliptic,
                                semi::SemidiscretizationHyperbolicElliptic,
                                I::CartesianIndex{NDIMS},

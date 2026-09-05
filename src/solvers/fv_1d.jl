@@ -151,17 +151,6 @@ end
          semi.boundary_conditions.left :
          semi.boundary_conditions.right
 
-    # A periodic ghost is not a BC-evaluated state: it *is* an interior cell,
-    # seen through the wrap. `_wrap_index` (`mod1`) resolves a ghost at any
-    # depth, so the second-order scheme's two ghost layers come out as
-    # u[0] = u[nx] and u[-1] = u[nx - 1] on the left, and u[nx + 1] = u[1],
-    # u[nx + 2] = u[2] on the right. Doing it here rather than at each call
-    # site means every consumer of `cell_state` — first-order stencils,
-    # slope reconstruction, ghost-cell slopes — gets periodicity for free.
-    if bc isa PeriodicBC
-        return extract_cell_state(u, CartesianIndex(_wrap_index(I[1], nx)), semi)
-    end
-
     return apply_bc(bc, u, I, semi, t)
 end
 

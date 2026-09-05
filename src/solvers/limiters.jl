@@ -24,6 +24,7 @@
 
 """
     minmod(a, b)
+    minmod(a, b, c)
 
 Minmod limiter: the argument of smallest magnitude if all arguments share a
 sign, zero otherwise. TVD, and the default limiter of the second-order IMEX
@@ -36,6 +37,11 @@ scheme.
         return sign(a) * min(abs(a), abs(b))
     end
 end
+
+# Three-argument minmod, by nesting: if any pair disagrees in sign the inner
+# call returns zero and `minmod(0, c)` keeps it zero, which is exactly the
+# "all three must share a sign" definition. Required by `minmod_theta`.
+@inline minmod(a, b, c) = minmod(minmod(a, b), c)
 
 """
     nolimiter(a, b)

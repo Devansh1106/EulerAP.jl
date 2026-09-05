@@ -43,9 +43,8 @@ function update_correction_coefficients!(cache, semi, params::NewtonParameters)
     u        = params.u
     gamma    = semi.equations.gamma
     t        = params.t
-    periodic = semi.boundary_conditions.left isa PeriodicBC
 
-    rho_at(I) = _hyperbolic_ghost_state(u, I, semi, t)[1]
+    rho_at(I) = cell_state(u, I, semi, t)[1]
 
     # rh[k] = gamma-mean density at the face to the LEFT of cell k, k=1..nx;
     # rh[nx+1] = face to the right of cell nx. One evaluation per interface.
@@ -55,16 +54,10 @@ function update_correction_coefficients!(cache, semi, params::NewtonParameters)
         rh[i + 1] = gamma_mean(rho_at(CartesianIndex(i)), rho_at(CartesianIndex(i + 1)), gamma)
     end
 
-    if periodic
-        wrap = gamma_mean(rho_at(CartesianIndex(nx)), rho_at(CartesianIndex(1)), gamma)
-        rh[1] = wrap
-        rh[nx + 1] = wrap
-    else
-        rh[1] = gamma_mean(rho_at(neighbor_index(CartesianIndex(1), semi, 1, -1)),
-                           rho_at(CartesianIndex(1)), gamma)
-        rh[nx + 1] = gamma_mean(rho_at(CartesianIndex(nx)),
-                                rho_at(neighbor_index(CartesianIndex(nx), semi, 1, 1)), gamma)
-    end
+    rh[1] = gamma_mean(rho_at(neighbor_index(CartesianIndex(1), semi, 1, -1)),
+                       rho_at(CartesianIndex(1)), gamma)
+    rh[nx + 1] = gamma_mean(rho_at(CartesianIndex(nx)),
+                            rho_at(neighbor_index(CartesianIndex(nx), semi, 1, 1)), gamma)
 
     @inbounds for i in 1:nx
         cache.alpha_im1[i] = alpha - eta_dt2 * rh[i] / dx^2
