@@ -348,7 +348,7 @@ Advance the semidiscretization using an IMEX time integrator.
 
 `limiter` is stored in the cache and is the single source of truth for both
 interior and ghost-cell slopes (see `reconstruct_slopes!` and
-`reconstructed_ghost_rho_vel`). Pass [`nolimiter`](@ref) for smooth
+`slope_dof`). Pass [`nolimiter`](@ref) for smooth
 convergence tests; see [`minmod`](@ref) for the default.
 """
 
@@ -388,7 +388,8 @@ function solve_imex(semi::AbstractSemidiscretization,
 
     cache = IMEXCacheSecondOrder(
         u_hyper,
-        phi;
+        phi,
+        nvars_hyper;
         limiter = limiter,
     )
 
@@ -647,11 +648,10 @@ end
         cache.semi_implicit_density_flux_diff_stage1[nx] += flux_semi_imp
         cache.semi_implicit_density_flux_diff_stage1[1]  -= flux_semi_imp
     else
-        # Reconstructed (not piecewise-constant) ghost state: uses the
-        # domain's two ghost cells (`CartesianIndex(0)` and the one further
-        # out, fetched internally) — see `reconstructed_ghost_rho_vel`. The
-        # elliptic ghost (`phi_gl`) is a separate, first-order-only BC and is
-        # deliberately left on `neighbor_index`.
+        # Reconstructed (not piecewise-constant) ghost state: cell 0 carries
+        # its own stored slope, built from the outer ghost layer — see
+        # `slope_dof`. The elliptic ghost (`phi_gl`) is a separate,
+        # first-order-only BC and is deliberately left on `neighbor_index`.
         rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
         rho_1,  vel_1  = reconstructed_rho_vel_at(cache, semi, CartesianIndex(1), :right, t)
         phi_gl         = _elliptic_var(cache.phi, semi, neighbor_index(CartesianIndex(1), semi, 1, -1), t)
@@ -739,7 +739,7 @@ end
     else
         # left boundary face (ghost, cell 1): cell 1 receives it as its left face.
         # Reconstructed (not piecewise-constant) hyperbolic ghost state — see
-        # `reconstructed_ghost_rho_vel`; the elliptic ghost (`phi_gl`) is a
+        # `slope_dof`; the elliptic ghost (`phi_gl`) is a
         # separate, first-order-only BC and is deliberately left on `neighbor_index`.
         Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
         rho_gl, vel_gl = reconstructed_rho_vel_at(cache, semi, CartesianIndex(0), :left, t)
@@ -966,153 +966,34 @@ end
     nx    = size(mesh, 1)
     nvars = nvariables(equations)
 
-    periodic = semi.boundary_conditions.left isa PeriodicBC
+    # Loop over the interior cells 1:nx *and* the inner ghost layer, cells 0 and
+    # nx + 1. Those two ghost cells are reconstructed to their domain-facing
+    # edge at the boundary faces, so they need a stored slope just as interior
+    # cells do; the outer layer (-1 and nx + 2) is only read as a cell average
+    # to build that slope, and so is never given a slot (see `slope_dof`).
+    #
+    # No cell needs special casing: `cell_state` resolves an out-of-range index
+    # itself — through `apply_bc` for a physical BC, and through the periodic
+    # wrap for `PeriodicBC`, where the two ghost layers come out as
+    # u[0] = u[nx], u[-1] = u[nx - 1] on the left and u[nx + 1] = u[1],
+    # u[nx + 2] = u[2] on the right. Ghost indices are used directly rather
+    # than via `neighbor_index`, which clamps back into the domain for
+    # `NeumannBC`/`ExtrapolateBC` and would hand back an interior state
+    # instead of the BC-provided ghost.
+    @inbounds for i in 0:(nx + 1)
 
-    @inbounds begin
+        I = CartesianIndex(i)
 
-        # ----------------------------------------------------------
-        # Interior cells
-        # ----------------------------------------------------------
-        for i in 2:(nx - 1)
-
-            I = CartesianIndex(i)
-
-            u_l = cell_state(
-                cache.u_reconstructed,
-                CartesianIndex(i - 1),
-                semi,
-                t,
-            )
-
-            u_c = cell_state(
-                cache.u_reconstructed,
-                I,
-                semi,
-                t,
-            )
-
-            u_r = cell_state(
-                cache.u_reconstructed,
-                CartesianIndex(i + 1),
-                semi,
-                t,
-            )
-
-            rho_l, vel_l = rho_vel(u_l)
-            rho_c, vel_c = rho_vel(u_c)
-            rho_r, vel_r = rho_vel(u_r)
-
-            rho_idx = global_dof(I, 1, nvars)
-            vel_idx = global_dof(I, 2, nvars)   # same slot; now a velocity slope
-
-            cache.slopes[rho_idx] = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
-            cache.slopes[vel_idx] = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
-        end
-
-
-        # ==========================================================
-        # Left boundary: cell i = 1
-        # ==========================================================
-
-        I = CartesianIndex(1)
-
-        u_c = cell_state(
-            cache.u_reconstructed,
-            I,
-            semi,
-            t,
-        )
-
-        u_r = cell_state(
-            cache.u_reconstructed,
-            CartesianIndex(2),
-            semi,
-            t,
-        )
-
-        if periodic
-
-            # Periodic neighbour of cell 1
-            u_l = cell_state(
-                cache.u_reconstructed,
-                CartesianIndex(nx),
-                semi,
-                t,
-            )
-
-        else
-
-            # Ghost cell supplied by the BC machinery. The index is used
-            # directly rather than via `neighbor_index`, which clamps back
-            # into the domain for `NeumannBC`/`ExtrapolateBC` and would hand
-            # back cell 1's own state instead of the BC-provided ghost.
-            u_l = cell_state(
-                cache.u_reconstructed,
-                CartesianIndex(0),
-                semi,
-                t,
-            )
-        end
+        u_l = cell_state(cache.u_reconstructed, CartesianIndex(i - 1), semi, t)
+        u_c = cell_state(cache.u_reconstructed, I,                     semi, t)
+        u_r = cell_state(cache.u_reconstructed, CartesianIndex(i + 1), semi, t)
 
         rho_l, vel_l = rho_vel(u_l)
         rho_c, vel_c = rho_vel(u_c)
         rho_r, vel_r = rho_vel(u_r)
 
-        rho_idx = global_dof(I, 1, nvars)
-        vel_idx = global_dof(I, 2, nvars)
-
-        cache.slopes[rho_idx] = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
-        cache.slopes[vel_idx] = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
-
-
-        # ==========================================================
-        # Right boundary: cell i = nx
-        # ==========================================================
-
-        I = CartesianIndex(nx)
-
-        u_l = cell_state(
-            cache.u_reconstructed,
-            CartesianIndex(nx - 1),
-            semi,
-            t,
-        )
-
-        u_c = cell_state(
-            cache.u_reconstructed,
-            I,
-            semi,
-            t,
-        )
-
-        if periodic
-
-            # Periodic neighbour of cell nx
-            u_r = cell_state(
-                cache.u_reconstructed,
-                CartesianIndex(1),
-                semi,
-                t,
-            )
-
-        else
-
-            # Ghost cell supplied by the BC machinery; see the note on the
-            # left boundary for why `neighbor_index` is bypassed here.
-            u_r = cell_state(
-                cache.u_reconstructed,
-                CartesianIndex(nx + 1),
-                semi,
-                t,
-            )
-        end
-
-        rho_l, vel_l = rho_vel(u_l)
-        rho_c, vel_c = rho_vel(u_c)
-        rho_r, vel_r = rho_vel(u_r)
-
-        rho_idx = global_dof(I, 1, nvars)
-        vel_idx = global_dof(I, 2, nvars)
+        rho_idx = slope_dof(I, 1, nvars)
+        vel_idx = slope_dof(I, 2, nvars)   # same slot; now a velocity slope
 
         cache.slopes[rho_idx] = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
         cache.slopes[vel_idx] = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)

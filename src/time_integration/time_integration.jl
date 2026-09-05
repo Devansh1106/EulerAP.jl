@@ -173,10 +173,11 @@ mutable struct IMEXCacheSecondOrder{TU, TW, TP, TR, TE, TL}
     momentum_flux_diff_stage2::TR
     slopes::TW
     limiter::TL     # slope limiter; single source of truth for interior *and*
-                    # ghost-cell slopes (see `reconstructed_ghost_rho_vel`)
+                    # ghost-cell slopes, which `reconstruct_slopes!` now fills
+                    # in one uniform pass (see `slope_dof`)
 end
 
-function IMEXCacheSecondOrder(u0::TU, phi0::TP; limiter = minmod) where {TU, TP}
+function IMEXCacheSecondOrder(u0::TU, phi0::TP, nvars::Int; limiter = minmod) where {TU, TP}
     T = eltype(u0)
     IMEXCacheSecondOrder(u0,
                         similar(u0),            # u_reconstructed
@@ -193,7 +194,10 @@ function IMEXCacheSecondOrder(u0::TU, phi0::TP; limiter = minmod) where {TU, TP}
                         similar(phi0),          # explicit_density_flux_diff_stage2
                         similar(phi0),          # semi_implicit_density_flux_diff_stage2
                         similar(phi0),          # momentum_flux_diff_stage2
-                        similar(u0),            # slopes
+                        # slopes: interior cells 1:nx *plus* the inner
+                        # ghost layer (cells 0 and nx + 1), hence the two
+                        # extra cells — see `slope_dof`
+                        similar(u0, length(u0) + 2 * nvars),   # slopes
                         limiter,)
 end
 
@@ -428,49 +432,17 @@ end
     return SVector{2}(rho, s[2] / rho)
 end
 
-"""
-    reconstructed_ghost_rho_vel(cache, semi, I, side, t)
-
-Reconstructed `(rho, vel)` at the domain-facing edge of the ghost cell `I`
-(`I` outside `1:size(semi.mesh, 1)`), using **two** ghost cells: `I` itself
-and the next one further out (`I - 1`/`I + 1`, whichever continues away from
-the domain), plus the adjacent interior cell. This mirrors exactly how an
-interior cell's own slope is built from its two neighbors, so the ghost gets
-a properly limited slope instead of being treated as piecewise constant;
-the limiter is `cache.limiter`, the same one `reconstruct_slopes!` uses for
-interior cells. `cell_state` resolves each of the three stencil points through the
-same `apply_bc` machinery regardless of how far outside the domain they are,
-so this works uniformly for `ExtrapolateBC`, `DirichletBC`, `NeumannBC` and
-`MixedBC` (never call this for `PeriodicBC`; `apply_bc` errors for it, and
-periodic ghosts should be resolved to their wrapped interior index before
-reaching here, as `reconstruct_slopes!` already does).
-"""
-@inline function reconstructed_ghost_rho_vel(cache, semi, I, side, t)
-    dx = semi.mesh.dx[1]
-
-    Il = CartesianIndex(I[1] - 1)
-    Ir = CartesianIndex(I[1] + 1)
-
-    u_l = cell_state(cache.u_reconstructed, Il, semi, t)
-    u_c = cell_state(cache.u_reconstructed, I,  semi, t)
-    u_r = cell_state(cache.u_reconstructed, Ir, semi, t)
-
-    rho_l, vel_l = u_l[1], u_l[2] / u_l[1]
-    rho_c, vel_c = u_c[1], u_c[2] / u_c[1]
-    rho_r, vel_r = u_r[1], u_r[2] / u_r[1]
-
-    limiter = cache.limiter
-
-    slope_rho = limiter((rho_c - rho_l) / dx, (rho_r - rho_c) / dx)
-    slope_vel = limiter((vel_c - vel_l) / dx, (vel_r - vel_c) / dx)
-
-    sgn = side === :left ? 1.0 : -1.0
-
-    rho = rho_c + sgn * 0.5 * dx * slope_rho
-    vel = vel_c + sgn * 0.5 * dx * slope_vel
-
-    return rho, vel
-end
+# Storage index for cell `i`'s slope. Slopes are stored for the interior cells
+# `1:nx` *and* for the inner ghost layer (cells `0` and `nx + 1`), because those
+# two ghost cells are themselves reconstructed to their domain-facing edge at
+# the boundary faces. The +1 offset maps cell `0` onto the first slot, so the
+# array runs over cells `0, 1, ..., nx, nx + 1` — `nx + 2` cells in all.
+#
+# The *outer* ghost layer (`-1` and `nx + 2`) deliberately gets no slot: it is
+# only ever read as a cell average, to build the inner layer's slope, and is
+# never itself reconstructed.
+@inline slope_dof(i::Int, var::Int, nvars::Int) = global_dof(i + 1, var, nvars)
+@inline slope_dof(I::CartesianIndex{1}, var::Int, nvars::Int) = slope_dof(I[1], var, nvars)
 
 @inline function reconstructed_rho_vel_at(cache,
                                           semi,
@@ -481,24 +453,18 @@ end
     dx        = semi.mesh.dx[1]
     nvars     = nvariables(equations)
 
-    # Ghost cell: reconstruct its own slope from two ghost layers (see
-    # `reconstructed_ghost_rho_vel`) instead of returning the piecewise
-    # constant BC value.
-    if !(1 <= I[1] <= size(semi.mesh, 1))
-        return reconstructed_ghost_rho_vel(cache, semi, I, side, t)
-    end
-
-    rho_idx = global_dof(I, 1, nvars)
-    vel_idx = global_dof(I, 2, nvars)   # cache.slopes here is now a velocity slope
+    # No ghost special case: `cell_state` supplies the cell average for
+    # interior and ghost cells alike (BC-evaluated for a physical BC,
+    # index-wrapped for `PeriodicBC`), and every cell that is reconstructed —
+    # the inner ghost layer included — has a stored slope (see `slope_dof`).
+    u_c   = cell_state(cache.u_reconstructed, I, semi, t)
+    rho_c = u_c[1]
+    vel_c = u_c[2] / rho_c
 
     sgn = side === :left ? 1.0 : -1.0
 
-    rho_c = cache.u_reconstructed[rho_idx]
-    m_c   = cache.u_reconstructed[vel_idx]
-    vel_c = m_c / rho_c
-
-    rho = rho_c + sgn * 0.5 * dx * cache.slopes[rho_idx]
-    vel = vel_c + sgn * 0.5 * dx * cache.slopes[vel_idx]
+    rho = rho_c + sgn * 0.5 * dx * cache.slopes[slope_dof(I, 1, nvars)]
+    vel = vel_c + sgn * 0.5 * dx * cache.slopes[slope_dof(I, 2, nvars)]
 
     return rho, vel
 end
@@ -508,29 +474,7 @@ end
 # Unlike `reconstructed_rho_vel_at` (which returns (ρ, vel)), this returns the
 # state layout expected by `solver.flux`.
 @inline function reconstructed_conservative_state_at(cache, semi, I, side, t)
-    nvars = nvariables(semi.equations)
-    dx    = semi.mesh.dx[1]
-
-    # Ghost cell: reconstruct its own slope from two ghost layers (see
-    # `reconstructed_ghost_rho_vel`) instead of returning the piecewise
-    # constant BC value.
-    if !(1 <= I[1] <= size(semi.mesh, 1))
-        rho, vel = reconstructed_ghost_rho_vel(cache, semi, I, side, t)
-        return SVector{2}(rho, rho * vel)
-    end
-
-    rho_idx = global_dof(I, 1, nvars)
-    vel_idx = global_dof(I, 2, nvars)   # cache.slopes here is now a velocity slope
-
-    sgn = side === :left ? 1.0 : -1.0
-
-    rho_c = cache.u_reconstructed[rho_idx]
-    m_c   = cache.u_reconstructed[vel_idx]
-    vel_c = m_c / rho_c
-
-    rho = rho_c + sgn * 0.5 * dx * cache.slopes[rho_idx]
-    vel = vel_c + sgn * 0.5 * dx * cache.slopes[vel_idx]
-
+    rho, vel = reconstructed_rho_vel_at(cache, semi, I, side, t)
     return SVector{2}(rho, rho * vel)
 end
 
