@@ -83,6 +83,10 @@ function perform_stage!(
     # Laplacian stencil.
     params = semi.cache_elliptic.newton_cache.params
     params.u = cache.u_reconstructed    # since \bar{\rho} need \rho_exp
+    # ρ̄_{i±1/2} must be reconstructed to the face, as the semi-implicit density
+    # flux does — hand the assembly this cache so it reconstructs through the
+    # same `reconstructed_rho_vel_at` the flux uses.
+    params.reconstruction_cache = cache
     params.eta = cache.eta * coeffs.gamma_ars
     params.dt  = dt
 
@@ -179,6 +183,8 @@ function perform_stage!(
     # Laplacian stencil.
     params = semi.cache_elliptic.newton_cache.params
     params.u = cache.u_reconstructed
+    # Same reconstructed face densities as stage 1 — see the note there.
+    params.reconstruction_cache = cache
     params.eta = cache.eta * coeffs.gamma_ars
     params.dt  = dt
 
@@ -255,6 +261,7 @@ function perform_stage!(::ImplicitCorrectionStage2,
     # there is no need to store the semi implicit density flux
     # u^3_E and reconstructed slopes are already there from last stages
     calculate_semi_implicit_density_flux_diff_stage3(semi, cache, t, dt, coeffs.gamma_ars)
+
 
     # One `solver.flux` evaluation per interface, applied to both neighbors
     # (same pattern as the first-order `ImplicitCorrectionStage`).

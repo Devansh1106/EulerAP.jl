@@ -92,6 +92,12 @@ function perform_stage!(
     # Laplacian stencil.
     params = semi.cache_elliptic.newton_cache.params
     params.u = cache.u
+    # First order reconstructs nothing, so the stencil's ρ̄_{i±1/2} are plain
+    # cell-average γ-means. Cleared explicitly rather than left alone: the
+    # params live on `semi.cache_elliptic`, so a second-order `solve` on the
+    # same `semi` would otherwise leave its cache behind for this one to
+    # reconstruct from (see `fill_face_densities_averaged!`).
+    params.reconstruction_cache = nothing
     params.eta = cache.eta
     params.dt  = dt
 
