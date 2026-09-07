@@ -17,7 +17,7 @@ u0, eta = 1.2, -1e-6   # soliton parameters (Bohm criterion: 1 < u0 < 1.6)
 initial_condition_soliton, L = make_initial_condition_soliton(u0, eta)
 exact_solution_soliton, _    = make_soliton_solution(u0, eta)
 
-lambda = 1e-2   # dispersive regime (Debye length of order the domain size)
+lambda = 1e0   # dispersive regime (Debye length of order the domain size)
 
 # --------------------------------------------------
 # Build semi for a given grid size
@@ -87,12 +87,21 @@ t_L = L / u0   # time for the soliton to cross the whole periodic domain
 # The soliton here is smooth, so `nolimiter` measures the scheme's formal order
 # without limiter interference. Use `minmod`, `MinmodTheta(...)` or `CWENO()`
 # for any test case with discontinuities.
-convergence_test(
+# convergence_test(
+#     make_semi,
+#     [100, 200, 400, 800],
+#     (0.0, t_L / 5),
+#     # IMEXIntegrator(FirstOrderThreeStagesIMEX());
+#     IMEXIntegrator(SecondOrderFiveStagesIMEX());
+#     exact_solution = exact_solution_soliton,
+#     limiter = nolimiter
+# )
+
+self_convergence_test(
     make_semi,
-    [100, 200, 400, 800],
+    [40, 80, 160, 320, 640, 1280],
     (0.0, t_L / 5),
     # IMEXIntegrator(FirstOrderThreeStagesIMEX());
     IMEXIntegrator(SecondOrderFiveStagesIMEX());
-    exact_solution = exact_solution_soliton,
     limiter = nolimiter
 )

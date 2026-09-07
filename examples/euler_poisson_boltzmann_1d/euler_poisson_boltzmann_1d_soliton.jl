@@ -9,7 +9,7 @@ exact_solution_soliton, _    = make_soliton_solution(u0, eta)
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (2000,),
+    (100,),
     (0.0,),
     (L,),
     periodicity = (true,) # For hyperbolic part only
@@ -80,8 +80,8 @@ semi = SemidiscretizationHyperbolicElliptic(
 
 # IMEX integrator with first-order 3-stage scheme
 integrator = IMEXIntegrator(
-    FirstOrderThreeStagesIMEX()
-    # SecondOrderFiveStagesIMEX()
+    # FirstOrderThreeStagesIMEX()
+    SecondOrderFiveStagesIMEX()
 )
 
 # Slope limiter used by the second-order scheme's reconstruction. Choices:
@@ -99,6 +99,7 @@ integrator = IMEXIntegrator(
 # their defaults: `MinmodTheta()`, `CWENO()`. Ignored by the first-order scheme,
 # which reconstructs nothing.
 limiter = minmod
+# limiter = nolimiter
 
 # --------------------------------------------------
 # Callbacks
@@ -120,10 +121,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_initial_second.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda)_$(t_L).h5"
+    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda)_$(t_L)_second.h5"
 
 # --------------------------------------------------
 # Save initial condition

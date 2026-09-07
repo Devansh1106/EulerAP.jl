@@ -48,7 +48,7 @@ using EulerAP
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (100,),
+    (80,),
     (-0.2,),
     (0.2,)
     # periodicity = (true,)
@@ -134,7 +134,7 @@ integrator = IMEXIntegrator(
 # The parameterized ones are structs and always need the parentheses, even for
 # their defaults: `MinmodTheta()`, `CWENO()`. Ignored by the first-order scheme,
 # which reconstructs nothing.
-limiter = minmod
+limiter = MinmodTheta()
 
 # --------------------------------------------------
 # Callbacks
