@@ -92,8 +92,9 @@ function backward_euler_step!(u,
     stats = semi.cache.stats
 
     @timeit stats.timer "nonlinear_solve" begin
-        sol = NonlinearSolve.solve(prob, NewtonRaphson();
-                                   linsolve_kwargs = (linsolve = linsolve,),
+        # `linsolve` goes on the algorithm, not in `linsolve_kwargs` — see the
+        # note in `set_newton_semi!`; the latter is dropped silently.
+        sol = NonlinearSolve.solve(prob, NewtonRaphson(linsolve = linsolve);
                                    abstol = abstol,
                                    reltol = reltol)
     end

@@ -129,7 +129,24 @@ function set_newton_semi!(newton_cache::NewtonCache, semi::AbstractSemidiscretiz
                                            jac_prototype = jac_prototype)
     u0 = zeros(T, nx)
     prob = NonlinearProblem(nonlinear_function, u0, newton_cache.params)
-    newton_cache.nonlinear_cache = init(prob, NewtonRaphson(); linsolve_kwargs = (linsolve = linsolve,))
+    # `linsolve` belongs on the algorithm, NOT in `linsolve_kwargs`: that keyword
+    # is forwarded to `LinearSolve.init` as loose keywords, which has no
+    # `linsolve` argument, so the entry was silently dropped and every elliptic
+    # solve ran on the default sparse solver (KLU) instead of Pardiso. Verified
+    # by inspecting `cache.descent_cache.lincache.lincache.alg`, which reported
+    # `DefaultLinearSolver(KLUFactorization)` under the old spelling and
+    # `PardisoJL(..., :MKL)` under this one.
+    #
+    # NOTE, measured: Pardiso is *slower* than that accidental KLU default on
+    # these 1D systems — median `solve` wall time on the smooth test to T = 1,
+    # 3 runs per point, Pardiso vs KLU: N=400 0.017 vs 0.010 s, N=1600 0.199
+    # vs 0.160 s, N=3200 16.0 vs 10.2 s. The matrix is tridiagonal plus two
+    # periodic corner entries, so KLU's lighter machinery wins and Pardiso's
+    # general sparse setup is pure overhead. Keeping Pardiso here because it is
+    # what this code asks for; switch `linsolve` in `basic_types.jl` (or drop it
+    # and pass no `linsolve` at all) if the 1D elliptic solve becomes a
+    # bottleneck. Revisit for 2D, where the 5-point stencil may favour Pardiso.
+    newton_cache.nonlinear_cache = init(prob, NewtonRaphson(linsolve = linsolve))
 
     return nothing
 end

@@ -330,7 +330,8 @@ end
             k_val = k
         end
     end
-    dt_val = 0.1 * dx / k_val
+    # dt_val = 0.05 * dx
+    dt_val = 0.02 * dx / k_val
 
     if dt_val < 1e-12
         error("""
