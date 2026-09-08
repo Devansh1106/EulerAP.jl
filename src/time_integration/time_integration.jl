@@ -307,8 +307,10 @@ end
         Ip1 = neighbor_index(I, semi, 1, 1)
         rho_r, vel_r = rho_vel_at(cache.u, cache.vel, semi, Ip1, t)
 
-        # Potential at right neighbor
-        phi_r = _elliptic_var(cache.phi, semi, Ip1, t)
+        # Potential at right neighbor. RAW index, not `Ip1`: `neighbor_index`
+        # resolves against the HYPERBOLIC boundary conditions, so reusing it
+        # here would bypass `boundary_conditions_elliptic` for the last cell.
+        phi_r = _elliptic_var(cache.phi, semi, CartesianIndex(I[1] + 1), t)
 
         # Density check
         if rho_i < 1e-12 || rho_r < 1e-12
@@ -331,7 +333,7 @@ end
         end
     end
     # dt_val = 0.05 * dx
-    dt_val = 0.02 * dx / k_val
+    dt_val = 0.1 * dx / k_val
 
     if dt_val < 1e-12
         error("""

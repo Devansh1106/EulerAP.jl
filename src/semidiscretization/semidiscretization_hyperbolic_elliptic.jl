@@ -169,6 +169,29 @@ conditions stored in `semi.boundary_conditions_elliptic`.
     end
 end
 
+"""
+    _elliptic_var(x_elliptic, semi, I, t)
+
+Value of the elliptic field at cell/ghost `I`, applying
+`semi.boundary_conditions_elliptic` itself for any out-of-range `I` (via
+[`elliptic_ghost_value`](@ref)).
+
+PASS THE RAW GHOST INDEX (`0`, `nx + 1`) — never an index already resolved by
+`neighbor_index`. `neighbor_index` resolves against the **hyperbolic**
+`semi.boundary_conditions`, and for `NeumannBC`/`ExtrapolateBC` it *clamps back
+into the domain* while for `PeriodicBC` it *wraps*. Either way it hands back an
+in-range index, which takes the fast path below and returns an interior value —
+silently bypassing the elliptic boundary condition entirely.
+
+That matters wherever the two BC sets differ, which they may (they are separate
+arguments per example). The combination hyperbolic `ExtrapolateBC` + elliptic
+`PeriodicBC` — used by the five-branch, seven-branch and shock-tube examples —
+gave `phi_ghost = phi[1]` at the left face instead of the periodic `phi[nx]`, so
+the boundary-face `phi_r - phi_l` came out as exactly ZERO. Since both
+`semi_implicit_density_flux` and the momentum source `S` are proportional to
+that difference, the electric drift flux and the electric force were switched
+off at the two boundary faces.
+"""
 @inline function _elliptic_var(x_elliptic,
                                semi::SemidiscretizationHyperbolicElliptic,
                                I::CartesianIndex{NDIMS},

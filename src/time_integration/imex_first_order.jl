@@ -185,8 +185,12 @@ function perform_stage!(
     end
 
     # Boundary face(s)
-    Ig_l = neighbor_index(CartesianIndex(1), semi, 1, -1)
-    u_gl, phi_gl = state_phi(Ig_l)
+    # RAW ghost index, not `neighbor_index`: `state_phi` feeds it to BOTH
+    # `cell_state` (hyperbolic BCs) and `_elliptic_var` (elliptic BCs), and each
+    # must apply its own. `neighbor_index` resolves against the hyperbolic BCs
+    # only, so pre-resolving here silently gave phi the wrong ghost whenever the
+    # two BC sets differ.
+    u_gl, phi_gl = state_phi(CartesianIndex(0))
     u_1,  phi_1  = state_phi(CartesianIndex(1))
     contrib = solver.flux(u_gl, u_1, phi_gl, phi_1, 1, equations, dt, dx, eta)
     rho_1_idx, mom_1_idx = global_dof(1, 1, nvars), global_dof(1, 2, nvars)
@@ -195,8 +199,7 @@ function perform_stage!(
     write_state[mom_1_idx] += (dt / 2) * contrib.source
 
     u_nx, phi_nx = state_phi(CartesianIndex(nx))
-    Ig_r = neighbor_index(CartesianIndex(nx), semi, 1, 1)
-    u_gr, phi_gr = state_phi(Ig_r)
+    u_gr, phi_gr = state_phi(CartesianIndex(nx + 1))
     contrib = solver.flux(u_nx, u_gr, phi_nx, phi_gr, 1, equations, dt, dx, eta)
     rho_nx_idx, mom_nx_idx = global_dof(nx, 1, nvars), global_dof(nx, 2, nvars)
     write_state[rho_nx_idx] -= (dt / dx) * contrib.flux[1]
