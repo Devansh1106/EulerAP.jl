@@ -432,7 +432,7 @@ function solve_imex(semi::AbstractSemidiscretization,
             # Compute diffusion coefficient from current density state
             # (must happen BEFORE compute_dt_2!, which uses cache.eta)
             compute_eta!(cache, semi, t)
-            cfl_dt = compute_dt_2!(cache, semi, t)
+            cfl_dt = compute_dt_3!(cache, semi, t)
             actual_dt = min(cfl_dt, last(tspan) - t)
 
             # Flux-difference accumulators are reused across timesteps and

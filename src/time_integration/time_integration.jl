@@ -131,20 +131,32 @@ mutable struct IMEXCacheFirstOrder{TU, TW, TP, TR, TE}
     u::TU               # Current solution u^n
     u_buffer::TW        # Hyperbolic work buffer
     rho_hat::TR         # intermediate states
-    vel::TR             # part of primitive variable storing
+    vel::TR             # part of primitive variable storing; see `vel_dof`
     phi::TP             # Elliptic solution ϕ^{n+1}
     eta::TE             # η: recomputed each timestep
 end
 
-function IMEXCacheFirstOrder(u0::TU, phi0::TP) where {TU, TP}
+"""
+    IMEXCacheFirstOrder(u0, phi0, ndims_vel = 1)
+
+`ndims_vel` is the number of velocity components stored per cell, i.e. the
+spatial dimension of the mesh: `vel` holds one scalar per cell in 1D and both
+`(v₁, v₂)` per cell in 2D, addressed through [`vel_dof`](@ref).
+"""
+function IMEXCacheFirstOrder(u0::TU, phi0::TP, ndims_vel::Int = 1) where {TU, TP}
     T = eltype(u0)
     IMEXCacheFirstOrder(u0,
                         similar(u0),            # u_buffer
                         similar(phi0),          # rho_hat (since rho_hat is 1 scalar per cell same as phi0)
-                        similar(phi0),          # vel
+                        similar(phi0, ndims_vel * length(phi0)),   # vel
                         phi0,
                         zero(T),)               # eta
 end
+
+# Storage index for the `d`-th velocity component of cell `cell`, out of
+# `ndims` components per cell. For `ndims == 1` this is `cell`, so the 1D read
+# path (`vel[cell]` in `rho_vel_at`) is exactly what it was.
+@inline vel_dof(cell::Int, d::Int, ndims::Int) = (cell - 1) * ndims + d
 
 """
     IMEXCacheSecondOrder
@@ -333,7 +345,7 @@ end
         end
     end
     # dt_val = 0.05 * dx
-    dt_val = 0.1 * dx / k_val
+    dt_val = 0.02 * dx / k_val
 
     if dt_val < 1e-12
         error("""
@@ -342,6 +354,117 @@ end
               dt          = $dt_val
               eta         = $eta
               k_val       = $k_val
+              """)
+    end
+    return dt_val
+end
+
+"""
+    compute_dt_3!(cache, semi, t; cfl = 1.0)
+
+CFL condition written per cell as a positivity-type bound on Δt:
+
+    Δt = min_i Δt^max_i,
+
+    Δt^max_i = (2/3) ρⁿ_i Δx / (αᵢ + √(αᵢ² + (4/3) η βᵢ ρⁿ_i))
+
+with the face contributions collected from the two faces of cell `i`
+
+    αᵢ = a_{i+1/2} + a_{i-1/2},   a_{i+1/2} = ρ̄ⁿ_{i+1/2} |{uⁿ}_{i+1/2}|
+    βᵢ = b_{i+1/2} + b_{i-1/2},   b_{i+1/2} = ρ̄ⁿ_{i+1/2} |ϕⁿ_{i+1} - ϕⁿ_i|
+
+where ρ̄_{i+1/2} = `gamma_mean(ρ_i, ρ_{i+1}, γ)` is the same face density used by
+[`compute_eta!`](@ref) and the numerical fluxes, and {u}_{i+1/2} is the
+arithmetic mean of the two adjacent velocities (as in [`compute_dt_2!`](@ref)).
+η is `cache.eta`, so `compute_eta!` must have run for this timestep first.
+
+Unlike `compute_dt_2!`, the bound is already an admissible step, so `cfl`
+defaults to 1; pass a smaller value to add a safety margin.
+"""
+@inline function compute_dt_3!(cache::Union{IMEXCacheFirstOrder, IMEXCacheSecondOrder},
+                               semi::AbstractSemidiscretization, t; cfl = 1.0)
+    mesh      = semi.mesh
+    equations = semi.equations
+    gamma     = equations.gamma
+    eta       = cache.eta
+
+    T = eltype(mesh.dx)
+    dx = mesh.dx[1]
+
+    dt_val = typemax(T)
+
+    @inbounds for I in eachcell(mesh)
+        cell = cell_index(I, semi)
+
+        # Center state — interior, reads cache.u/cache.vel directly.
+        rho_i, vel_i = rho_vel_at(cache.u, cache.vel, semi, I, t)
+
+        # Potential at center
+        phi_i = _elliptic_var(cache.phi, semi, I, t)
+
+        # Neighbors — interior for all but the cells at a non-periodic
+        # boundary, where they fall back to an on-the-fly ghost evaluation
+        # inside rho_vel_at.
+        Im1 = neighbor_index(I, semi, 1, -1)
+        Ip1 = neighbor_index(I, semi, 1, 1)
+        rho_l, vel_l = rho_vel_at(cache.u, cache.vel, semi, Im1, t)
+        rho_r, vel_r = rho_vel_at(cache.u, cache.vel, semi, Ip1, t)
+
+        # Potentials at the neighbors. RAW indices, not `Im1`/`Ip1`:
+        # `neighbor_index` resolves against the HYPERBOLIC boundary conditions,
+        # so reusing it here would bypass `boundary_conditions_elliptic` for the
+        # first and last cells.
+        phi_l = _elliptic_var(cache.phi, semi, CartesianIndex(I[1] - 1), t)
+        phi_r = _elliptic_var(cache.phi, semi, CartesianIndex(I[1] + 1), t)
+
+        # Density check
+        if rho_i < 1e-12 || rho_l < 1e-12 || rho_r < 1e-12
+            error("""
+                  Density below threshold in compute_dt_3!
+                  time    = $t
+                  cell    = $cell
+                  rho_l   = $rho_l
+                  rho_i   = $rho_i
+                  rho_r   = $rho_r
+                  eta     = $eta
+                  """)
+        end
+
+        # Face densities ρ̄_{i±1/2}
+        rho_half_l = gamma_mean(rho_l, rho_i, gamma)
+        rho_half_r = gamma_mean(rho_i, rho_r, gamma)
+
+        # a_{i±1/2} = ρ̄_{i±1/2} |{u}_{i±1/2}|
+        a_l = rho_half_l * abs(0.5 * (vel_l + vel_i))
+        a_r = rho_half_r * abs(0.5 * (vel_i + vel_r))
+        alpha = a_l + a_r
+
+        # b_{i±1/2} = ρ̄_{i±1/2} |Δϕ| across that face
+        b_l = rho_half_l * abs(phi_i - phi_l)
+        b_r = rho_half_r * abs(phi_r - phi_i)
+        beta = b_l + b_r
+
+        denom = alpha + sqrt(alpha^2 + (4 / 3) * eta * beta * rho_i)
+
+        # A cell at rest with a flat potential puts no restriction on Δt
+        # (denom == 0 there, which would otherwise give 0/0).
+        denom > zero(T) || continue
+
+        dt_i = (2 / 3) * rho_i * dx / denom
+
+        if dt_i < dt_val
+            dt_val = dt_i
+        end
+    end
+
+    dt_val = 0.1 * dt_val
+
+    if dt_val < 1e-12
+        error("""
+              dt below threshold in compute_dt_3!
+              time        = $t
+              dt          = $dt_val
+              eta         = $eta
               """)
     end
     return dt_val
