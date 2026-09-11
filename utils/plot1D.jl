@@ -7,8 +7,10 @@ and `ncells` scalars) and plot density, velocity, and electric potential
 profiles on the same figure.
 
 The first file is treated as the **initial condition** (plotted with a solid
-black line).  Subsequent files are **final solutions** and are distinguished
-by marker type and colour.
+black line).  Subsequent files are **final solutions**, distinguished first by
+line style and colour and only then by markers: the first final is dotted, the
+second dashed, and from the third on a marker is added on top of the remaining
+styles, since by then the line styles alone no longer separate the curves.
 
 Legend logic:
   - Identify which parameters vary across the *final* files.
@@ -43,6 +45,58 @@ const MARKER_TYPES = [:circle, :diamond, :square, :x, :cross, :plus,
                       :hexagon, :pentagon, :dtriangle, :utriangle]
 const LINE_COLORS = [:black, :red, :blue, :green, :orange, :purple, :brown,
                      :pink, :olive, :cyan, :magenta, :navy]
+
+# Line styles for the *final* solutions. The initial condition takes :solid, so
+# these start at the next distinct style — dotted, then dashed.
+const FINAL_LINE_STYLES = [:dot, :dash, :dashdot, :dashdotdot]
+
+# How many final curves are drawn by line style alone, before markers kick in.
+const N_UNMARKED_FINALS = 2
+
+# Roughly how many markers to put on a marked curve, regardless of mesh size.
+const N_MARKERS = 20
+
+# Line width of a final curve. `:dot` renders as round dots whose diameter *is*
+# the line width, so the dotted curve gets its own (larger) value — at the
+# shared width its dots are too small to read against the solid initial line.
+const FINAL_LINE_WIDTH = 2
+const DOTTED_LINE_WIDTH = 5
+
+"""
+    plot_final!(p, x, y, i, label)
+
+Draw the `i`-th final solution onto subplot `p`.
+
+The initial condition is a solid line, so the finals continue the sequence of
+line styles: `i = 1` is dotted, `i = 2` is dashed, and both are drawn without
+markers — the style alone tells them apart. From `i = 3` on the remaining
+styles are reused with a marker added.
+
+The markers are a *separate* subsampled scatter series rather than a `marker`
+attribute on the line, because Plots.jl has no marker-thinning attribute
+(`markevery` is matplotlib's and is silently ignored here), and a marker on
+every cell is an unreadable blob on a fine mesh. The scatter carries no legend
+entry — the line style and colour already identify the curve.
+"""
+function plot_final!(p, x, y, i, label)
+    ls = FINAL_LINE_STYLES[(i - 1) % length(FINAL_LINE_STYLES) + 1]
+    lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
+
+    lw = ls === :dot ? DOTTED_LINE_WIDTH : FINAL_LINE_WIDTH
+
+    plot!(p, x, y, lw = lw, ls = ls, color = lc, label = label)
+
+    if i > N_UNMARKED_FINALS
+        mk  = MARKER_TYPES[(i - N_UNMARKED_FINALS - 1) % length(MARKER_TYPES) + 1]
+        idx = 1:max(1, length(x) ÷ N_MARKERS):length(x)
+        scatter!(p, x[idx], y[idx],
+                 marker = mk, markersize = 3, color = lc,
+                 markerstrokecolor = lc, markerstrokewidth = 1,
+                 label = "")
+    end
+
+    return p
+end
 
 """
     read_solution_1d(filepath::String) -> Dict
@@ -225,13 +279,7 @@ function main()
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
-        lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
-        plot!(p1, f["x"], f["rho"],
-              lw = 1, color = lc,
-              marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-              markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
-              label = legend_labels[i])
+        plot_final!(p1, f["x"], f["rho"], i, legend_labels[i])
     end
 
     # ------------------------------------------------------------------
@@ -246,13 +294,7 @@ function main()
 
     # Final states from remaining files
     for (i, f) in enumerate(final_files)
-        mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
-        lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
-        plot!(p2, f["x"], f["ux"],
-              lw = 1, color = lc,
-              marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-              markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
-              label = legend_labels[i])
+        plot_final!(p2, f["x"], f["ux"], i, legend_labels[i])
     end
 
     # ------------------------------------------------------------------
@@ -267,13 +309,7 @@ function main()
     #
     # # Final states from remaining files
     # for (i, f) in enumerate(final_files)
-    #     mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
-    #     lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
-    #     plot!(p_mom, f["x"], f["mx"],
-    #           lw = 1, color = lc,
-    #           marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-    #           markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
-    #           label = legend_labels[i])
+    #     plot_final!(p_mom, f["x"], f["mx"], i, legend_labels[i])
     # end
 
     # ------------------------------------------------------------------
@@ -295,13 +331,7 @@ function main()
         # Final states from remaining files
         for (i, f) in enumerate(final_files)
             if haskey(f, "phi")
-                mk = MARKER_TYPES[(i - 1) % length(MARKER_TYPES) + 1]
-                lc = LINE_COLORS[(i - 1) % length(LINE_COLORS) + 1]
-                plot!(p3, f["x"], f["phi"],
-                      lw = 1, color = lc,
-                      marker = mk, markersteph = max(1, length(f["x"]) ÷ 20),
-                      markersize = 3, markerstrokecolor = lc, markerstrokewidth = 1,
-                      label = legend_labels[i])
+                plot_final!(p3, f["x"], f["phi"], i, legend_labels[i])
             end
         end
 

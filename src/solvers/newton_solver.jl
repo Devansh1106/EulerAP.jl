@@ -5,6 +5,101 @@
 #! format: noindent
 
 """
+    fill_face_densities_averaged!(rh, u, semi, gamma, t)
+    fill_face_densities_reconstructed!(rh, cache, semi, gamma, t)
+
+Fill `rh[1:nx+1]` with the γ-mean density at every interface: `rh[k]` is the
+face to the LEFT of cell `k` (so `rh[nx+1]` is the face to the right of cell
+`nx`). One `gamma_mean` evaluation per face — each is shared by cell `k - 1`'s
+`alpha_ip1` and cell `k`'s `alpha_im1`.
+
+These densities are the `ρ̄ⁿ_{i±1/2}` of the `η dt² ρ̄ⁿ_{i±1/2}` correction that
+`update_correction_coefficients!` folds into the Laplacian stencil. That
+correction is the implicit half of the semi-implicit density flux, so each
+face's density here **must be the same ρ̄ that the flux assembly uses at that
+same face**. Only then does the elliptic equation the Newton solve inverts
+hold exactly for the ρ the flux actually produces, i.e.
+
+    -λ² Δφⁿ⁺¹ + e^{φⁿ⁺¹} = ρⁿ⁺¹        (to Newton tolerance)
+
+which is the asymptotic-preserving property the semi-implicit coupling is
+there for. Measured on the smooth sech test at nx = 160, the residual of that
+identity after a full step is ~3e-15 with matching ρ̄ and ~1e-7 when the two
+disagree.
+
+Hence one function per scheme, differing only in where the face density comes
+from. They are separate names rather than two methods of one name because they
+take the same number of arguments and the second-order IMEX cache type is not
+yet defined this early in the include order, so neither arity nor dispatch can
+tell them apart.
+
+  * `..._reconstructed!` (second order). The flux assembly reconstructs both
+    sides of the face before taking the γ-mean (see
+    `calculate_semi_implicit_density_flux_diff_stage2`/`_stage3`), so this
+    calls the same `reconstructed_rho_vel_at` to do it: cell `i` contributes
+    its right edge — `:left` of the face — and cell `i + 1` its left edge,
+    `:right`. Reading the cell *averages* here instead left the elliptic
+    coefficients out of step with that reconstruction. Both are second-order
+    approximations of the face density, so the mismatch is only O(Δx²) —
+    `≈ Δx² ρ''/4`, since the averaged pair overshoots the face value by
+    `Δx² ρ''/8` and the reconstructed pair undershoots it by the same — and
+    the measured EOC on the smooth test is unchanged. What it buys is the
+    exact identity above rather than a nearby one.
+
+  * `..._averaged!` (first order, and the initial-condition solve). Nothing is
+    reconstructed anywhere, so the face density is the γ-mean of the two cell
+    averages, exactly as `calculate_explicit_density_flux_diff!` takes it.
+
+The ghost cells at the two ends are addressed differently in the two,
+deliberately. The reconstructed form indexes ghosts as `0` and `nx + 1`
+directly, as `reconstruct_slopes!` and the second-order flux assembly do,
+because `neighbor_index` clamps back into the domain for
+`NeumannBC`/`ExtrapolateBC` and would pair an interior cell's slope with a
+ghost face. The averaged form keeps the `neighbor_index` lookup, matching the
+first-order flux assembly, for which the clamp *is* the ghost state.
+"""
+@inline function fill_face_densities_averaged!(rh, u, semi, gamma, t)
+
+    nx = ncells(semi.mesh)
+
+    rho_at(I) = cell_state(u, I, semi, t)[1]
+
+    @inbounds for i in 1:(nx - 1)
+        rh[i + 1] = gamma_mean(rho_at(CartesianIndex(i)),
+                               rho_at(CartesianIndex(i + 1)), gamma)
+    end
+
+    rh[1] = gamma_mean(rho_at(neighbor_index(CartesianIndex(1), semi, 1, -1)),
+                       rho_at(CartesianIndex(1)), gamma)
+    rh[nx + 1] = gamma_mean(rho_at(CartesianIndex(nx)),
+                            rho_at(neighbor_index(CartesianIndex(nx), semi, 1, 1)), gamma)
+
+    return nothing
+end
+
+@inline function fill_face_densities_reconstructed!(rh, cache, semi, gamma, t)
+
+    nx = ncells(semi.mesh)
+
+    # Right edge of cell I (the value on the left side of I's right face).
+    rho_l_at(I) = reconstructed_rho_vel_at(cache, semi, I, :left, t)[1]
+    # Left edge of cell I (the value on the right side of I's left face).
+    rho_r_at(I) = reconstructed_rho_vel_at(cache, semi, I, :right, t)[1]
+
+    @inbounds for i in 1:(nx - 1)
+        rh[i + 1] = gamma_mean(rho_l_at(CartesianIndex(i)),
+                               rho_r_at(CartesianIndex(i + 1)), gamma)
+    end
+
+    rh[1] = gamma_mean(rho_l_at(CartesianIndex(0)),
+                       rho_r_at(CartesianIndex(1)), gamma)
+    rh[nx + 1] = gamma_mean(rho_l_at(CartesianIndex(nx)),
+                            rho_r_at(CartesianIndex(nx + 1)), gamma)
+
+    return nothing
+end
+
+"""
     update_correction_coefficients!(cache, semi, params)
 
 Precompute the per-cell Laplacian coefficients
@@ -25,6 +120,11 @@ neighbor of cell i, once as the left neighbor of cell i+1).
 
 Note `alpha_i` is not stored: `alpha_i = -2*alpha + eta_dt2*(rh_l+rh_r)/dx^2
 = -(alpha_im1 + alpha_ip1)` always, so callers derive it inline.
+
+The face densities `rh` come from `fill_face_densities_reconstructed!` when
+the second-order scheme has supplied its cache in `params.reconstruction_cache`
+and from `fill_face_densities_averaged!` otherwise; see those for why each
+must match the flux assembly of its scheme.
 """
 function update_correction_coefficients!(cache, semi, params::NewtonParameters)
     mesh  = semi.mesh
@@ -43,27 +143,17 @@ function update_correction_coefficients!(cache, semi, params::NewtonParameters)
     u        = params.u
     gamma    = semi.equations.gamma
     t        = params.t
-    periodic = semi.boundary_conditions.left isa PeriodicBC
-
-    rho_at(I) = _hyperbolic_ghost_state(u, I, semi, t)[1]
 
     # rh[k] = gamma-mean density at the face to the LEFT of cell k, k=1..nx;
     # rh[nx+1] = face to the right of cell nx. One evaluation per interface.
     rh = Vector{eltype(cache.alpha_im1)}(undef, nx + 1)
 
-    @inbounds for i in 1:(nx - 1)
-        rh[i + 1] = gamma_mean(rho_at(CartesianIndex(i)), rho_at(CartesianIndex(i + 1)), gamma)
-    end
+    reconstruction_cache = params.reconstruction_cache
 
-    if periodic
-        wrap = gamma_mean(rho_at(CartesianIndex(nx)), rho_at(CartesianIndex(1)), gamma)
-        rh[1] = wrap
-        rh[nx + 1] = wrap
+    if reconstruction_cache === nothing
+        fill_face_densities_averaged!(rh, u, semi, gamma, t)
     else
-        rh[1] = gamma_mean(rho_at(neighbor_index(CartesianIndex(1), semi, 1, -1)),
-                           rho_at(CartesianIndex(1)), gamma)
-        rh[nx + 1] = gamma_mean(rho_at(CartesianIndex(nx)),
-                                rho_at(neighbor_index(CartesianIndex(nx), semi, 1, 1)), gamma)
+        fill_face_densities_reconstructed!(rh, reconstruction_cache, semi, gamma, t)
     end
 
     @inbounds for i in 1:nx

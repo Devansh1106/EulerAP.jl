@@ -9,7 +9,7 @@ exact_solution_soliton, _    = make_soliton_solution(u0, eta)
 # --------------------------------------------------
 
 mesh = CartesianMesh(
-    (2000,),
+    (100,),
     (0.0,),
     (L,),
     periodicity = (true,) # For hyperbolic part only
@@ -80,9 +80,26 @@ semi = SemidiscretizationHyperbolicElliptic(
 
 # IMEX integrator with first-order 3-stage scheme
 integrator = IMEXIntegrator(
-    FirstOrderThreeStagesIMEX()
-    # SecondOrderFiveStagesIMEX()
+    # FirstOrderThreeStagesIMEX()
+    SecondOrderFiveStagesIMEX()
 )
+
+# Slope limiter used by the second-order scheme's reconstruction. Choices:
+#
+#   minmod              default; classical minmod, TVD
+#   nolimiter           plain central slope (Uᵢ₊₁ - Uᵢ₋₁) / (2Δx); no limiting
+#                       at all — second order, but not TVD, so it can oscillate
+#                       and lose positivity of ρ on discontinuous data
+#   MinmodTheta(θ)      generalized minmod, θ ∈ [1, 2]; θ = 1 reduces to
+#                       `minmod`, θ = 2 is the most compressive TVD choice
+#   CWENO(ε)            nonlinear φ-weighted average of the one-sided slopes,
+#                       φ(s) = (ε + s²)⁻², default ε = 1e-6
+#
+# The parameterized ones are structs and always need the parentheses, even for
+# their defaults: `MinmodTheta()`, `CWENO()`. Ignored by the first-order scheme,
+# which reconstructs nothing.
+limiter = minmod
+# limiter = nolimiter
 
 # --------------------------------------------------
 # Callbacks
@@ -104,10 +121,10 @@ OUTPUT_DIR = "data_new"
 mesh_str = join(mesh.cells_per_dimension, "x")
 
 initial_filename =
-    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_initial.h5"
+    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_initial_second.h5"
 
 solution_filename =
-    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda)_$(t_L).h5"
+    "euler_poisson_boltzmann_1d_soliton_$(mesh_str)_$(lambda)_$(t_L)_second.h5"
 
 # --------------------------------------------------
 # Save initial condition
@@ -126,6 +143,7 @@ save_initial_condition(
 sol = solve(semi,
             tspan,
             integrator;
+            limiter = limiter,
             callbacks = callbacks)
 
 # --------------------------------------------------
