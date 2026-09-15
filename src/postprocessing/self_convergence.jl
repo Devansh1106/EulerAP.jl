@@ -342,7 +342,13 @@ cannot be called interchangeably.
 - `grid_sizes`: resolutions in increasing order, each exactly twice the
   previous one in every dimension (e.g. `[40, 80, 160, 320]`); anything else is
   an error, since 2:1 restriction is undefined for it
-- `tspan`, `integrator`, `dt`, `abstol`, `reltol`, `limiter`: passed to `solve()`
+- `tspan`, `integrator`, `abstol`, `reltol`, `limiter`: passed to `solve()`
+- `dt`: passed to `solve()`, and meaningful only for an integrator that steps
+  at a prescribed step — i.e. `ImplicitEulerCustom`. The IMEX schemes recompute
+  the step from `compute_dt_3!` every iteration, so a `dt` given alongside an
+  `IMEXIntegrator` is ignored (with a warning from `solve`) and the sweep runs
+  at `dt ∝ Δx`. There is no way to hold `dt` fixed across the grids of an IMEX
+  sweep; what such a table measures is the combined space-time order
 
 With `n` grid sizes this produces `n - 1` error rows (the finest grid appears
 only as the reference for the second-finest) and `n - 2` EOC values. Only two
@@ -376,7 +382,11 @@ function self_convergence_test(semi_builder, grid_sizes, tspan, integrator;
 
         semi = semi_builder(N)
 
-        dt_actual = dt === nothing ? minimum(semi.mesh.dx) : dt
+    # The IMEX schemes set their own step from `compute_dt_3!` every iteration,
+    # so leave `dt` unset for them: filling in a mesh-based default would only
+    # trip the "dt is ignored" warning in `solve` without changing the run.
+        dt_actual = dt === nothing && !(integrator isa IMEXIntegrator) ?
+                    minimum(semi.mesh.dx) : dt
 
         sol = solve(semi, tspan, integrator;
                     dt = dt_actual, abstol = abstol, reltol = reltol,

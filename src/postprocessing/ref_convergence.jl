@@ -364,7 +364,13 @@ called interchangeably.
   a refinement or two beyond `maximum(grid_sizes)`: the measured error cannot
   drop below the reference's own error, and rows close to the reference read
   too high or too low as a result
-- `tspan`, `integrator`, `dt`, `abstol`, `reltol`, `limiter`: passed to `solve()`
+- `tspan`, `integrator`, `abstol`, `reltol`, `limiter`: passed to `solve()`
+- `dt`: passed to `solve()`, and meaningful only for an integrator that steps
+  at a prescribed step — i.e. `ImplicitEulerCustom`. The IMEX schemes recompute
+  the step from `compute_dt_3!` every iteration, so a `dt` given alongside an
+  `IMEXIntegrator` is ignored (with a warning from `solve`) and the sweep runs
+  at `dt ∝ Δx`. There is no way to hold `dt` fixed across the grids of an IMEX
+  sweep; what such a table measures is the combined space-time order
 
 With `n` grid sizes this produces `n` error rows and `n - 1` EOC values, from
 `n + 1` solver runs. Only the reference solution and the current grid's are
@@ -392,7 +398,11 @@ function ref_convergence_test(semi_builder, grid_sizes, tspan, integrator;
     # The reference run: solved once, up front, and kept for the whole sweep.
     semi_reference = semi_builder(reference_grid_size)
 
-    dt_reference = dt === nothing ? minimum(semi_reference.mesh.dx) : dt
+    # The IMEX schemes set their own step from `compute_dt_3!` every iteration,
+    # so leave `dt` unset for them: filling in a mesh-based default would only
+    # trip the "dt is ignored" warning in `solve` without changing the run.
+    dt_reference = dt === nothing && !(integrator isa IMEXIntegrator) ?
+                   minimum(semi_reference.mesh.dx) : dt
 
     sol_reference = solve(semi_reference, tspan, integrator;
                           dt = dt_reference, abstol = abstol, reltol = reltol,
@@ -404,7 +414,8 @@ function ref_convergence_test(semi_builder, grid_sizes, tspan, integrator;
 
         semi = semi_builder(N)
 
-        dt_actual = dt === nothing ? minimum(semi.mesh.dx) : dt
+        dt_actual = dt === nothing && !(integrator isa IMEXIntegrator) ?
+                    minimum(semi.mesh.dx) : dt
 
         sol = solve(semi, tspan, integrator;
                     dt = dt_actual, abstol = abstol, reltol = reltol,

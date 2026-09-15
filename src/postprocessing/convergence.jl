@@ -109,6 +109,12 @@ Run a convergence test by solving at multiple grid resolutions.
   default [`minmod`](@ref) clips slopes at smooth extrema and drags the
   observed order back towards 1. Ignored by integrators that reconstruct
   nothing (`ImplicitEulerCustom`, `FirstOrderThreeStagesIMEX`).
+- `dt`: passed to `solve()`, and meaningful only for an integrator that steps
+  at a prescribed step — i.e. `ImplicitEulerCustom`. The IMEX schemes recompute
+  the step from `compute_dt_3!` every iteration, so a `dt` given alongside an
+  `IMEXIntegrator` is ignored (with a warning from `solve`) and the sweep runs
+  at `dt ∝ Δx`. There is no way to hold `dt` fixed across the grids of an IMEX
+  sweep; what such a table measures is the combined space-time order.
 
 Prints one convergence table per variable (see `convergence_table`), labelled
 via `variable_names(semi)`.
@@ -124,7 +130,11 @@ function convergence_test(semi_builder, grid_sizes, tspan, integrator;
     semi = nothing
     for N in grid_sizes
         semi = semi_builder(N)
-        dt_actual = dt === nothing ? minimum(semi.mesh.dx) : dt
+    # The IMEX schemes set their own step from `compute_dt_3!` every iteration,
+    # so leave `dt` unset for them: filling in a mesh-based default would only
+    # trip the "dt is ignored" warning in `solve` without changing the run.
+        dt_actual = dt === nothing && !(integrator isa IMEXIntegrator) ?
+                    minimum(semi.mesh.dx) : dt
 
         sol = solve(semi, tspan, integrator;
                     dt = dt_actual, abstol = abstol, reltol = reltol,
