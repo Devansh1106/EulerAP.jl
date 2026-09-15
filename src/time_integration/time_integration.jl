@@ -616,7 +616,7 @@ end
 
 """
     solve(semi, tspan, integrator::IMEXIntegrator;
-          dt, limiter = minmod, callbacks=CallbackSet())
+          limiter = minmod, callbacks=CallbackSet())
 
 Advance the semidiscretization using the IMEX solver.
 
@@ -624,12 +624,19 @@ Advance the semidiscretization using the IMEX solver.
 reconstruction — [`minmod`](@ref) (default) or [`nolimiter`](@ref) for
 unlimited central slopes, which is what a smooth convergence/EOC test wants.
 It is ignored by the first-order scheme, which reconstructs nothing.
+
+THERE IS NO `dt` TO SET HERE. Both IMEX schemes recompute the step at the top
+of every iteration from the positivity-type CFL bound in [`compute_dt_3!`](@ref)
+— a fixed step is not a mode they have. The keyword is still accepted, because
+generic callers like [`convergence_test`](@ref) are written against
+`ImplicitEulerCustom`'s `solve`, but passing one warns and changes nothing: the
+step used is the CFL step, and it is reported through `CallbackStats.dt`. Use
+[`ImplicitEulerCustom`](@ref) if you need a run that honours a prescribed `dt`.
 """
 function solve(semi,
                tspan,
                integrator::IMEXIntegrator;
-            #    dt = 0.0,
-               dt = minimum_cell_size(semi.mesh),
+               dt = nothing,
                # Accepted (but unused: the IMEX schemes pick their own step
                # from a CFL condition every iteration) so that generic
                # callers like `convergence_test`, written against
@@ -640,11 +647,23 @@ function solve(semi,
                limiter = minmod,
                callbacks=CallbackSet())
 
+    # Loud rather than silent: a `dt` that is quietly discarded makes a run look
+    # like a fixed-step study when it was a CFL-stepped one, and any convergence
+    # table read off it means something other than what it claims.
+    if dt !== nothing
+        @warn """
+              `dt` is ignored by the IMEX schemes. Every step is set by the CFL
+              bound in `compute_dt_3!`, so this run is NOT at the dt you passed
+              — drop the keyword, or use `ImplicitEulerCustom`, which does step
+              at the dt it is given. The step actually taken is reported as
+              `CallbackStats.dt`.
+              """ dt integrator.scheme maxlog = 1
+    end
+
     return solve_imex(semi,
                       integrator,
                       tspan,
                       integrator.scheme;
-                      dt = dt,
                       limiter = limiter,
                       callbacks=callbacks)
 end

@@ -334,11 +334,12 @@ end
                integrator::IMEXIntegrator,
                tspan,
                scheme::SecondOrderFiveStagesIMEX;
-               dt,
                limiter = minmod,
                callbacks = CallbackSet())
 
 Advance the semidiscretization using an IMEX time integrator.
+
+Takes no `dt`: the step is recomputed every iteration by `compute_dt_3!`.
 
 `limiter` is stored in the cache and is the single source of truth for both
 interior and ghost-cell slopes (see `reconstruct_slopes!` and
@@ -350,7 +351,6 @@ function solve_imex(semi::AbstractSemidiscretization,
                     integrator::IMEXIntegrator,
                     tspan,
                     scheme::SecondOrderFiveStagesIMEX;
-                    dt,
                     limiter = minmod,
                     callbacks = CallbackSet())
 
@@ -393,11 +393,13 @@ function solve_imex(semi::AbstractSemidiscretization,
     # Callback infrastructure
     # --------------------------------------------------
 
+    # `nothing` for the step: this scheme has none to report until it computes
+    # one, and each iteration's step is published as `stats.dt` below.
     simulation = Simulation(
         semi,
         integrator,
         tspan,
-        dt,
+        nothing,
         zero(eltype(u)),
         zero(eltype(u)),
     )

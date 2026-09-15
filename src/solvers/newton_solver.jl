@@ -298,6 +298,182 @@ function assemble_nonlinear_jacobian!(J,
     return nothing
 end
 
+# ============================================================================
+# Failure diagnostics
+# ============================================================================
+
+@inline function _extrema_line(io, name, v)
+    nf = count(!isfinite, v)
+    finite = filter(isfinite, v)
+    if isempty(finite)
+        println(io, rpad("  " * name, 24), ": ALL NON-FINITE (", length(v), " entries)")
+    else
+        println(io, rpad("  " * name, 24), ": min ", minimum(finite),
+                "  max ", maximum(finite),
+                nf == 0 ? "" : "   [$nf NON-FINITE]")
+    end
+    return nothing
+end
+
+"""
+    NEWTON_ABSTOL_SAFETY
+
+Margin, in units of `eps`, between the requested Newton tolerance and the
+smallest residual double precision can represent for this stencil. See
+[`elliptic_abstol`](@ref).
+"""
+const NEWTON_ABSTOL_SAFETY = 64
+
+"""
+    elliptic_abstol(cache, phi)
+
+Absolute tolerance for one elliptic Newton solve, on `maximum(abs, F)`.
+
+NonlinearSolve's default is `eps(Float64)^(4//5) = 3.0e-13`, a fixed *absolute*
+bound. The residual assembled by `assemble_nonlinear_residual!` is not
+dimensionless, though: every stencil term carries the Laplacian scale
+
+    |alpha| = (lambda^2 + eta dt^2 rho_face) / dx^2
+
+so perturbing one `phi[i]` by a single ulp moves `F` by about `4 |alpha| eps |phi|`.
+That is the finest resolution the residual has — no iterate can land between two
+neighbouring values of it — and since `alpha ~ 1/dx^2` it grows like N^2 while
+the default tolerance stays put. Measured on the smooth sech test
+(lambda = 1, domain [-10, 10]), the smallest attainable `max|F|` was 4.4e-14 at
+N = 640 and 7.2e-13 at N = 2560 — exactly the 16x of (2560/640)^2, and the
+second one is above 3.0e-13. There the success test could never fire: Newton
+converged in ~3 iterations and then took zero-sized steps until the
+`max_stalled_steps = 32` detector in NonlinearSolve's default
+`AbsNormSafeBestTerminationMode` gave up and returned `ReturnCode.Stalled` at
+step ~35, which is what `newton_failure_report` was warning about on a `phi`
+that was in fact correct to one ulp.
+
+Scaling the tolerance with the same `alpha` the residual carries fixes the
+comparison and, more usefully, makes the *solution* accuracy grid independent:
+stopping at `max|F| <= C eps |alpha|` means an error in `phi` of about
+`C eps / 4`, i.e. ~1e-15 for any N, rather than an error that silently tightens
+with refinement until it cannot be met.
+
+`alpha` is read from the coefficients `update_correction_coefficients!` has just
+assembled, so the `eta dt^2` correction is included — it dominates `lambda^2` in
+the AP limit `lambda -> 0`, where a tolerance built from `lambda^2 / dx^2` alone
+would be far too tight. The floor keeps NonlinearSolve's own default on coarse
+grids, where it is already attainable.
+"""
+@inline function elliptic_abstol(cache, phi)
+    T = eltype(phi)
+
+    stencil = max(maximum(abs, cache.alpha_im1), maximum(abs, cache.alpha_ip1))
+
+    # 2D shares this solver; its cache carries the y-direction band as well.
+    # `hasproperty` on a concrete cache type folds away at compile time.
+    if hasproperty(cache, :alpha_jm1)
+        stencil = max(stencil,
+                      maximum(abs, cache.alpha_jm1), maximum(abs, cache.alpha_jp1))
+    end
+
+    # `phi` here is the initial guess, which is the previous step's solution
+    # (zero for the very first solve); the iterate is the same size.
+    phi_scale = max(one(T), maximum(abs, phi))
+
+    return max(T(eps(T)^(4 // 5)),
+               T(NEWTON_ABSTOL_SAFETY) * eps(T) * stencil * phi_scale)
+end
+
+"""
+    newton_failure_report(semi, phi, t; sol = nothing, exception = nothing)
+
+Build a multi-line description of one failed elliptic Newton solve.
+
+Called from [`solve_newton!`](@ref) when the solve cannot be trusted, which
+happens two ways and only one of them is an exception: `solve!` can throw, or it
+can return normally with a non-success `retcode` (`MaxIters`, `Stalled`, ...).
+The second is the dangerous one — `φ` is then silently whatever the last iterate
+was, the timestep carries on, and nothing downstream ever learns the elliptic
+solve did not converge. Both paths report through here.
+
+Everything is read from state that already exists (`newton_cache.params`,
+`semi.cache_elliptic`) except `‖F(φ)‖`, which is reassembled so the number
+reported is the residual at exactly the `φ` passed in — not whatever the solver
+last happened to store. On the `retcode` path `solve_newton!` calls this *after*
+`copyto!(phi, sol.u)`, so that `φ` is the one being handed back; on the throw
+path there is no solution to copy and `φ` is still the initial guess, which the
+`phi` line then shows.
+
+The reassembly uses its own scratch vector rather than `semi.cache_elliptic.residual`:
+the initial-condition solve passes that very array in as `rhs`
+(`initial_condition`, semidiscretization_hyperbolic_elliptic.jl), so writing `F`
+into it would overwrite the right-hand side this report is about to print.
+
+`abstol` is the tolerance the solve actually ran with, from
+[`elliptic_abstol`](@ref); a `‖F(φ)‖` just above it is a tolerance that could
+not be met, not a broken solve.
+"""
+function newton_failure_report(semi, phi, t; sol = nothing, exception = nothing,
+                               abstol = nothing)
+    cache  = semi.cache_elliptic
+    params = cache.newton_cache.params
+    io = IOBuffer()
+
+    println(io, "Elliptic Newton solve failed")
+    println(io, rpad("  time", 24),   ": ", t)
+    println(io, rpad("  dt", 24),     ": ", params.dt)
+    println(io, rpad("  eta", 24),    ": ", params.eta)
+    println(io, rpad("  lambda", 24), ": ", semi.equations_elliptic.lambda)
+    println(io, rpad("  cells", 24),  ": ", length(phi))
+    abstol !== nothing &&
+        println(io, rpad("  abstol", 24), ": ", abstol)
+    println(io, rpad("  laplacian_coeff", 24), ": ", params.laplacian_coeff)
+
+    # Solver-reported state. Guarded with `hasproperty` throughout: the concrete
+    # solution type comes from NonlinearSolve and its stats fields are not part
+    # of any interface this package controls.
+    if sol !== nothing
+        hasproperty(sol, :retcode) &&
+            println(io, rpad("  retcode", 24), ": ", sol.retcode)
+        if hasproperty(sol, :stats) && sol.stats !== nothing
+            stats = sol.stats
+            for f in (:nsteps, :nf, :njacs, :nfactors, :nsolve)
+                hasproperty(stats, f) &&
+                    println(io, rpad("  stats." * String(f), 24), ": ", getproperty(stats, f))
+            end
+        end
+        if hasproperty(sol, :resid) && sol.resid !== nothing
+            println(io, rpad("  ||resid||_inf (NLS)", 24), ": ", maximum(abs, sol.resid))
+        end
+    end
+
+    # Residual at the iterate being returned, via the same assembly the solver
+    # itself uses. Wrapped: if the state is bad enough to have broken the solve,
+    # reassembling it can throw too, and losing the rest of the report to that
+    # would defeat the point.
+    try
+        F = similar(phi)
+        assemble_nonlinear_residual!(F, phi, params, semi)
+        println(io, rpad("  ||F(phi)||_inf", 24), ": ", maximum(abs, F))
+        println(io, rpad("  ||F(phi)||_2", 24), ": ", sqrt(sum(abs2, F)))
+    catch err
+        println(io, rpad("  ||F(phi)||", 24), ": residual reassembly FAILED: ",
+                first(sprint(showerror, err), 200))
+    end
+
+    _extrema_line(io, "phi", phi)
+    params.rhs isa AbstractVector && _extrema_line(io, "rhs", params.rhs)
+
+    # Density block of the hyperbolic state the elliptic solve was handed. A
+    # non-positive rho here is the usual root cause: `exp(phi)` in the residual
+    # and the gamma-means in the stencil both assume rho > 0.
+    if params.u isa AbstractVector
+        nvars = nvariables(semi.equations)
+        _extrema_line(io, "rho (from params.u)", @view params.u[1:nvars:end])
+    end
+
+    exception !== nothing &&
+        println(io, rpad("  exception", 24), ": ", sprint(showerror, exception))
+
+    return String(take!(io))
+end
+
 function solve_newton!(phi,
                        rhs,
                        laplacian_coeff,
@@ -313,16 +489,42 @@ function solve_newton!(phi,
 
     update_correction_coefficients!(cache, semi, newton_cache.params)
 
+    # Must follow `update_correction_coefficients!`: the tolerance is built from
+    # the stencil coefficients it has just written. See `elliptic_abstol`.
+    abstol = elliptic_abstol(cache, phi)
+
     reinit!(
         newton_cache.nonlinear_cache,
         phi;
         p = newton_cache.params,
+        abstol = abstol,
     )
 
-    sol = solve!(
-        newton_cache.nonlinear_cache,
-    )
+    # A throw from `solve!` loses all of this otherwise: the exception carries
+    # nothing about which timestep, which dt, or what state fed the solve.
+    # Report, then rethrow unchanged so callers still see the original error.
+    sol = try
+        solve!(
+            newton_cache.nonlinear_cache,
+        )
+    catch err
+        @error newton_failure_report(semi, phi, t; exception = err, abstol = abstol)
+        rethrow()
+    end
+
+    # Before the report, not after: the report's `‖F(φ)‖` and `phi` lines are
+    # about the iterate being handed back, and until this runs `phi` is still
+    # the initial guess. Reporting first made every failure print the residual
+    # of the guess — at t = 0 that is φ ≡ 0, i.e. `‖1 - ρ‖∞`, a number with
+    # nothing to do with the solve that just ran.
     copyto!(phi, sol.u)
+
+    # Non-success without a throw. `maxlog` because this fires per elliptic
+    # solve, i.e. potentially every timestep of a long run.
+    if hasproperty(sol, :retcode) && !successful_retcode(sol.retcode)
+        @warn newton_failure_report(semi, phi, t; sol = sol, abstol = abstol) maxlog = 10
+    end
+
     return nothing
 end
 
