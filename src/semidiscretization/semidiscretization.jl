@@ -63,6 +63,16 @@ state and the current timestep/diffusion coefficient; when they
 are left at their initial values (`u = 0`, `eta = 0`, `dt = 0`) the
 assembly reduces to the plain `laplacian_coeff` Laplacian, which is the
 behavior used by the initial-condition solve.
+
+`reconstruction_cache` is the second-order scheme's own IMEX cache, handed
+over so the assembly can reconstruct the face densities `ρ̄ⁿ_{i±1/2}` through
+`reconstructed_rho_vel_at` — the very function its flux assembly uses — and
+so land on the same `rho_half` at each face. It is `nothing` for the
+first-order scheme and for the initial-condition solve, neither of which
+reconstructs anything; `update_correction_coefficients!` then falls back to
+the cell averages in `u`. Typed `Any` so this file need not know the IMEX
+cache types, which are defined later (see the include order in `EulerAP.jl`);
+it is read once per elliptic solve, so the dynamic dispatch is immaterial.
 """
 mutable struct NewtonParameters{TRhs, TCoeff, TTime, TU <: AbstractVector, TEta, TDt}
     rhs::TRhs
@@ -71,6 +81,7 @@ mutable struct NewtonParameters{TRhs, TCoeff, TTime, TU <: AbstractVector, TEta,
     u::TU
     eta::TEta
     dt::TDt
+    reconstruction_cache::Any
 end
 
 """
@@ -93,7 +104,7 @@ function create_newton_cache(mesh::CartesianMesh)
     # block-layout state) without copying. Its initial zero value keeps the
     # initial-condition solve on the plain `laplacian_coeff` Laplacian.
     params = NewtonParameters{Vector{T}, T, T, AbstractVector{T}, T, T}(
-        zeros(T, nx), zero(T), zero(T), zeros(T, nx), zero(T), zero(T))
+        zeros(T, nx), zero(T), zero(T), zeros(T, nx), zero(T), zero(T), nothing)
 
     # NonlinearProblem is created later in set_newton_semi!
     # once the semidiscretization is available
@@ -118,7 +129,24 @@ function set_newton_semi!(newton_cache::NewtonCache, semi::AbstractSemidiscretiz
                                            jac_prototype = jac_prototype)
     u0 = zeros(T, nx)
     prob = NonlinearProblem(nonlinear_function, u0, newton_cache.params)
-    newton_cache.nonlinear_cache = init(prob, NewtonRaphson(); linsolve_kwargs = (linsolve = linsolve,))
+    # `linsolve` belongs on the algorithm, NOT in `linsolve_kwargs`: that keyword
+    # is forwarded to `LinearSolve.init` as loose keywords, which has no
+    # `linsolve` argument, so the entry was silently dropped and every elliptic
+    # solve ran on the default sparse solver (KLU) instead of Pardiso. Verified
+    # by inspecting `cache.descent_cache.lincache.lincache.alg`, which reported
+    # `DefaultLinearSolver(KLUFactorization)` under the old spelling and
+    # `PardisoJL(..., :MKL)` under this one.
+    #
+    # NOTE, measured: Pardiso is *slower* than that accidental KLU default on
+    # these 1D systems — median `solve` wall time on the smooth test to T = 1,
+    # 3 runs per point, Pardiso vs KLU: N=400 0.017 vs 0.010 s, N=1600 0.199
+    # vs 0.160 s, N=3200 16.0 vs 10.2 s. The matrix is tridiagonal plus two
+    # periodic corner entries, so KLU's lighter machinery wins and Pardiso's
+    # general sparse setup is pure overhead. Keeping Pardiso here because it is
+    # what this code asks for; switch `linsolve` in `basic_types.jl` (or drop it
+    # and pass no `linsolve` at all) if the 1D elliptic solve becomes a
+    # bottleneck. Revisit for 2D, where the 5-point stencil may favour Pardiso.
+    newton_cache.nonlinear_cache = init(prob, NewtonRaphson(linsolve = linsolve))
 
     return nothing
 end

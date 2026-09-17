@@ -7,11 +7,16 @@ using SparseArrays: spzeros, sparse
 using ForwardDiff
 using Interpolations
 
-using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution, NonlinearProblem, reinit!, solve!
+#using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution, NonlinearProblem, reinit!, solve!
+using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution, NonlinearProblem, reinit!, solve!, successful_retcode
 using NonlinearSolve: NonlinearFunction, NonlinearProblem, NewtonRaphson, NonlinearSolve, init
 
-using Pardiso
-using LinearSolve: MKLPardisoFactorize
+@static if Sys.isapple()
+    using LinearSolve: KLUFactorization
+else
+    using Pardiso
+    using LinearSolve: MKLPardisoFactorize
+end
 
 using MuladdMacro
 using HDF5: h5open, create_group
@@ -89,6 +94,8 @@ include("postprocessing/postprocessing.jl")
 include("postprocessing/norms.jl")
 include("postprocessing/errors.jl")
 include("postprocessing/convergence.jl")
+include("postprocessing/self_convergence.jl")
+include("postprocessing/ref_convergence.jl")
 
 # --------------------------------------------------
 # Exports
@@ -111,6 +118,14 @@ export FluxEnergyStable
 # Solvers
 export FVSolver
 export EllipticSolver
+
+# Slope limiters
+export minmod
+export nolimiter
+export minmod_theta
+export MinmodTheta
+export cweno
+export CWENO
 
 # Boundary Conditions
 export BoundaryConditions1D
@@ -159,6 +174,8 @@ export initial_condition_shock_tube
 export initial_condition_seven_branch
 export initial_condition_plasma_expansion
 export make_initial_condition_soliton
+export manufactured_ic
+export smooth_ic
 export make_soliton_solution
 
 # Source terms
@@ -173,6 +190,22 @@ export NewtonCache
 export compute_errors
 export convergence_table
 export convergence_test
+
+# Postprocessing — self-referenced (Cauchy) convergence
+export self_convergence_test
+export self_convergence_table
+export compute_errors_self
+export restrict_solution
+export errors_between
+export SelfConvergenceResult
+
+# Postprocessing — fixed fine reference solution as the "exact" one
+export ref_convergence_test
+export ref_convergence_table
+export compute_errors_reference
+export restrict_to_reference_grid
+export reference_factors
+export RefConvergenceResult
 
 # Callbacks
 export CallbackSet

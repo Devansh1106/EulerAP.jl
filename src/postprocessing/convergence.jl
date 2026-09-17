@@ -20,16 +20,29 @@ end
 """
     convergence_table(cells,
                       results;
-                      variable = 1)
+                      variable = 1,
+                      eoc_label = "EOC",
+                      title = nothing)
 
 Print a convergence table.
+
+`eoc_label` names the order column and `title` adds a line above the header —
+both exist so the self-referenced pathway can reuse this printer while
+remaining visibly distinct in the output (see `self_convergence_table`). The
+defaults reproduce the exact-solution table unchanged.
 """
 function convergence_table(cells,
                            results;
-                           variable = 1)
+                           variable = 1,
+                           eoc_label = "EOC",
+                           title = nothing)
 
     println("---------------------------------------------------------------------")
-    println("  Cells      L1 Error        L2 Error       Linf Error       EOC")
+    if title !== nothing
+        println(title)
+        println("---------------------------------------------------------------------")
+    end
+    @printf "  Cells      L1 Error        L2 Error       Linf Error   %9s\n" eoc_label
     println("---------------------------------------------------------------------")
 
     previous = nothing
@@ -80,22 +93,36 @@ end
 """
     convergence_test(semi_builder, grid_sizes, tspan, integrator;
                      exact_solution, dt = nothing,
-                     abstol = 1e-8, reltol = 1e-8)
+                     abstol = 1e-8, reltol = 1e-8, limiter = minmod)
 
 Run a convergence test by solving at multiple grid resolutions.
 
 - `semi_builder`: a function `N -> semidiscretization` that creates a problem for grid size N
-- `grid_sizes`: array of grid sizes (e.g., [100, 200, 400])
+- `grid_sizes`: array of grid sizes (e.g., [100, 200, 400]). Successive entries
+  must differ by a factor of two — `experimental_order` assumes that refinement
+  ratio.
 - `tspan`, `integrator`: passed to `solve()`
 - `exact_solution`: passed to `compute_errors()`, called as `exact_solution(x, t, semi)`
   regardless of `semi`'s type — see `compute_errors`
+- `limiter`: forwarded to `solve()`; use [`nolimiter`](@ref) to measure the
+  formal order of the second-order scheme on a smooth solution, since the
+  default [`minmod`](@ref) clips slopes at smooth extrema and drags the
+  observed order back towards 1. Ignored by integrators that reconstruct
+  nothing (`ImplicitEulerCustom`, `FirstOrderThreeStagesIMEX`).
+- `dt`: passed to `solve()`, and meaningful only for an integrator that steps
+  at a prescribed step — i.e. `ImplicitEulerCustom`. The IMEX schemes recompute
+  the step from `compute_dt_3!` every iteration, so a `dt` given alongside an
+  `IMEXIntegrator` is ignored (with a warning from `solve`) and the sweep runs
+  at `dt ∝ Δx`. There is no way to hold `dt` fixed across the grids of an IMEX
+  sweep; what such a table measures is the combined space-time order.
 
 Prints one convergence table per variable (see `convergence_table`), labelled
 via `variable_names(semi)`.
 """
 function convergence_test(semi_builder, grid_sizes, tspan, integrator;
                           exact_solution, dt = nothing,
-                          abstol = 1e-8, reltol = 1e-8)
+                          abstol = 1e-8, reltol = 1e-8,
+                          limiter = minmod)
 
     results = AnalysisResult[]
     cells = Int[]
@@ -103,10 +130,15 @@ function convergence_test(semi_builder, grid_sizes, tspan, integrator;
     semi = nothing
     for N in grid_sizes
         semi = semi_builder(N)
-        dt_actual = dt === nothing ? minimum(semi.mesh.dx) : dt
+    # The IMEX schemes set their own step from `compute_dt_3!` every iteration,
+    # so leave `dt` unset for them: filling in a mesh-based default would only
+    # trip the "dt is ignored" warning in `solve` without changing the run.
+        dt_actual = dt === nothing && !(integrator isa IMEXIntegrator) ?
+                    minimum(semi.mesh.dx) : dt
 
         sol = solve(semi, tspan, integrator;
-                    dt = dt_actual, abstol = abstol, reltol = reltol)
+                    dt = dt_actual, abstol = abstol, reltol = reltol,
+                    limiter = limiter)
 
         result = compute_errors(sol, semi; exact_solution = exact_solution)
         push!(results, result)

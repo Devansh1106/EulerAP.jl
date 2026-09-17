@@ -55,13 +55,22 @@ end
     return SVector{nvars}(@view x[first:last])
 end
 
-@inline function apply_bc(bc::PeriodicBC,
+# A periodic ghost is not a BC-evaluated state: it *is* an interior cell, seen
+# through the wrap. `_wrap_index` (`mod1`) resolves a ghost at any depth, so the
+# second-order scheme's two ghost layers come out as u[0] = u[nx] and
+# u[-1] = u[nx - 1] on the left, and u[nx + 1] = u[1], u[nx + 2] = u[2] on the
+# right. `mod1` is the identity on `1:nx`, so wrapping every dimension leaves
+# the in-range ones untouched and only folds the out-of-range one back in.
+@inline function apply_bc(bc::PeriodicBC{NDIMS},
                           u,
-                          I,
+                          I::CartesianIndex{NDIMS},
                           semi,
-                          t)
+                          t) where {NDIMS}
 
-    error("PeriodicBC should never reach apply_bc")
+    wrapped = CartesianIndex(ntuple(d -> _wrap_index(I[d], size(semi.mesh, d)),
+                                    NDIMS))
+
+    return extract_cell_state(u, wrapped, semi)
 end
 
 # ============================================================================

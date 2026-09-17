@@ -62,12 +62,19 @@ Container storing everything that defines a simulation.
 
 This object is immutable throughout the simulation and contains the
 semidiscretization together with the time integration parameters.
+
+`dt` is the step the integrator was *asked* to take, so it is `nothing` for the
+IMEX schemes, which set every step themselves from the CFL bound in
+[`compute_dt_3!`](@ref) rather than from a step handed to `solve`. The step
+actually taken is always in `CallbackStats.dt`, which is where a callback
+should read it from; `ImplicitEulerCustom` is the one integrator for which the
+two agree.
 """
-struct Simulation{Semi, Integrator, T}
+struct Simulation{Semi, Integrator, T, DT}
     semi::Semi
     integrator::Integrator
     tspan::Tuple{T,T}
-    dt::T
+    dt::DT
     abstol::T
     reltol::T
 end

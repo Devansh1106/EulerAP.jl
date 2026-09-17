@@ -85,8 +85,11 @@ function initialize!(::SummaryCallback,
     print_summary_line("Time span",
                        simulation.tspan)
 
+    # `nothing` means the integrator sets its own step every iteration (the
+    # IMEX schemes, via `compute_dt_3!`) rather than stepping at a given `dt`.
     print_summary_line("Time step",
-                       simulation.dt)
+                       simulation.dt === nothing ?
+                           "CFL-controlled (compute_dt_3!)" : simulation.dt)
 
     print_summary_line("Absolute tolerance",
                        simulation.abstol)
