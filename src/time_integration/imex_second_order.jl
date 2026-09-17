@@ -472,7 +472,8 @@ function solve_imex(semi::AbstractSemidiscretization,
                     cache,
                     integrator,
                     actual_dt,
-                    t + actual_dt,
+                    #t + actual_dt,
+                    t + coeffs.gamma_ars * actual_dt,
                     coeffs,
                 )
             end
@@ -500,7 +501,8 @@ function solve_imex(semi::AbstractSemidiscretization,
                     cache,
                     integrator,
                     actual_dt,
-                    t,
+                    #t,
+                    t + coeffs.gamma_ars * actual_dt,
                     coeffs,
                 )
             end
