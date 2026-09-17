@@ -10,8 +10,12 @@ using Interpolations
 using SciMLBase: ODEFunction, ODEProblem, FullSpecialize, AbstractODESolution, NonlinearProblem, reinit!, solve!
 using NonlinearSolve: NonlinearFunction, NonlinearProblem, NewtonRaphson, NonlinearSolve, init
 
-using Pardiso
-using LinearSolve: MKLPardisoFactorize
+@static if Sys.isapple()
+    using LinearSolve: KLUFactorization
+else
+    using Pardiso
+    using LinearSolve: MKLPardisoFactorize
+end
 
 using MuladdMacro
 using HDF5: h5open, create_group

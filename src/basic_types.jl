@@ -5,7 +5,7 @@
 @muladd begin
 #! format: noindent
 
-const linsolve = MKLPardisoFactorize()
+const linsolve = @static Sys.isapple() ? KLUFactorization() : MKLPardisoFactorize()
 
 # abstract supertype of specific semidiscretizations such as
 # - SemidiscretizationHyperbolic for hyperbolic conservation laws
